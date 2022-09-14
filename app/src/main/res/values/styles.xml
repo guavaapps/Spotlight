@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Spotlight.PlayButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minWidth">64dp</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:paddingTop">@dimen/m3_btn_icon_only_default_padding</item>
+        <item name="android:paddingBottom">@dimen/m3_btn_icon_only_default_padding</item>
+        <item name="android:insetLeft">@dimen/m3_btn_inset</item>
+        <item name="android:insetRight">@dimen/m3_btn_inset</item>
+        <item name="iconSize">32dp</item>
+        <item name="iconPadding">@dimen/m3_btn_icon_only_icon_padding</item>
+    </style>
+
+    <style name="Theme.Spotlight.CloseButton" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingTop">@dimen/m3_btn_icon_only_default_padding</item>
+        <item name="android:paddingBottom">@dimen/m3_btn_icon_only_default_padding</item>
+        <item name="android:insetLeft">@dimen/m3_btn_inset</item>
+        <item name="android:insetRight">@dimen/m3_btn_inset</item>
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">@dimen/m3_btn_icon_only_icon_padding</item>
+    </style>
+
+    <style name="Theme.Spotlight.Text">
+
+    </style>
+
+    <style name="Theme.Spotlight.PlaylistSelector.Text.Title" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">20sp</item>
+    </style>
+
+    <style name="Theme.Spotlight.PlaylistSelector.Item.Text.Title" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">16dp</item>
+    </style>
+
+    <style name="Theme.Spotlight.PlaylistSelector.Item.Text.TrackCount" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">14dp</item>
+    </style>
+
+    <style name="Theme.Spotlight.PlaylistSelector.Text.Info" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">12sp</item>
+        <item name="textAllCaps">false</item>
+    </style>
+
+    <style name="Theme.Spotlight.AlbumButton.Text" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+
+    <style name="Theme.Spotlight.ShapeAppearance" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerSize">32dp</item>
+    </style>
+</resources>

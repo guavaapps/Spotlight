@@ -1,0 +1,77 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.Spotlight" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <item name="colorPrimary">#ffff74f9</item>
+        <item name="colorOnPrimary">#ff380039</item>
+        <item name="colorPrimaryContainer">#ff511950</item>
+        <item name="colorOnPrimaryContainer">#fff8aeef</item>
+        <item name="colorSecondary">#ffff74f9</item>
+        <item name="colorOnSecondary">#ff380039</item>
+        <item name="colorSecondaryContainer">#ff511950</item>
+        <item name="colorOnSecondaryContainer">#fff8aeef</item>
+        <item name="colorTertiary">#ffababab</item>
+        <item name="colorOnTertiary">#ff1b1b1b</item>
+        <item name="colorTertiaryContainer">#ff2f3131</item>
+        <item name="colorOnTertiaryContainer">#ffc6c6c6</item>
+
+
+        <!--        <item name="colorSurface">#121212</item>-->
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:windowSplashScreenBackground">#121212</item>
+        <!--        <item name="android:background">#121212</item>-->
+        <item name="colorOnBackground">#ffffff</item>
+        <item name="colorOnSurface">#ffffff</item>
+        <item name="colorError">#cf6679</item>
+
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.Spotlight.Ben.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="iconPadding">0dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <!--        <item name="android:height">48dp</item>-->
+    </style>
+
+    <style name="Theme.Spotlight.Ben.Transparent" parent="Widget.Material3.Button.TextButton">
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:inset">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">48dp</item>
+        <!--        <item name="iconTint">#1db954</item>-->
+        <!--        iconSize = 18dp-->
+    </style>
+
+    <style name="Theme.Spotlight.Ben" parent="Widget.Material3.Button">
+        <item name="iconSize">24dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:inset">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+
+    <style name="Theme.Spotlight.Text.Heading.Mini" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">24dp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Theme.Spotlight.Text.Sub" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">16dp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Theme.Spotlight.Text.Mini" parent="Theme.Spotlight.Text">
+        <item name="android:textSize">14dp</item>
+    </style>
+
+    <style name="Theme.Spotlight.Text.TrackTitle">
+        <item name="android:textSize">24dp</item>
+    </style>
+</resources>

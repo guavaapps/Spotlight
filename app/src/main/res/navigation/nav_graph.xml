@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/contentFragment">
+
+    <fragment
+        android:id="@+id/contentFragment"
+        android:name="com.guavaapps.spotlight.ContentFragment">
+
+        <action
+            android:id="@+id/action_contentFragment_to_userFragment"
+            app:destination="@+id/userFragment"
+            app:exitAnim="@android:anim/fade_out"
+            app:enterAnim="@android:anim/fade_in"/>
+<!--            app:enterAnim="@anim/fade_in"-->
+<!--            app:exitAnim="@anim/fade_out" />-->
+        <!--            app:popUpTo="@id/contentFragment" />-->
+    </fragment>
+
+    <fragment
+        android:id="@+id/userFragment"
+        android:name="com.guavaapps.spotlight.UserFragment">
+
+        <action
+            android:id="@+id/action_userFragment_to_contentFragment"
+            app:destination="@+id/contentFragment" />
+    </fragment>
+</navigation>

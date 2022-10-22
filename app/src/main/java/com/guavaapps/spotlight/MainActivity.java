@@ -17,6 +17,9 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.reflect.TypeToken;
 import com.pixel.spotifyapi.Objects.UserPrivate;
 import com.pixel.spotifyapi.SpotifyApi;
 import com.pixel.spotifyapi.SpotifyService;
@@ -26,6 +29,10 @@ import com.spotify.android.appremote.api.SpotifyAppRemote;
 import com.spotify.sdk.android.auth.AuthorizationClient;
 import com.spotify.sdk.android.auth.AuthorizationRequest;
 import com.spotify.sdk.android.auth.AuthorizationResponse;
+
+import java.lang.reflect.Type;
+import java.util.List;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
@@ -49,6 +56,14 @@ public class MainActivity extends AppCompatActivity {
     private ContentFragment mContentFragment;
     private PlayFragment mPlayFragment;
 
+    private void trainIris () {
+        NetworkDenseKt.batchTrain ();
+    }
+
+    private String getHex (int color) {
+        return String.format ("#%06X", color & 0xffffff);
+    }
+
     @SuppressLint ("ClickableViewAccessibility")
     @Override
     protected void onCreate (Bundle savedInstanceState) {
@@ -58,24 +73,16 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView (R.layout.activity_main);
 
-        Network network = Network.Companion.create (1, 2, 2);
-        Handler.createAsync (Looper.getMainLooper ()).postDelayed (
-                () -> {
-                    for (int i = 0; i < 100; i++) {
-                        Node[] nodes = network.feed (5f);//(float) (Math.random () * 10));
-
-                        String o = "";
-
-                        for (Node n : nodes) {
-                            o += n.getA () + " ";
-                        }
-                        Log.e (TAG, "output - " + o);
-                        network.n (3f, 1f);
-                        network.h ();
-                    }
-                }
-                , 0
-        );
+//        LSTMSHNode node = new LSTMSHNode ();
+//        node.create (4);
+//        node.feed (
+//                new float[] {0.1f, 0.33f, 0.24f, 0.74f},
+//                new float[] {0.24f, 0.74f, 0.33f, 0.1f}
+//        );
+//        node.feed (
+//                new float[] {0.1f, 0.33f, 0.24f, 0.74f},
+//                new float[] {0.24f, 0.74f, 0.33f, 0.1f}
+//        );
 
         ObjectStore objectStore = new ObjectStore ();
 
@@ -141,14 +148,27 @@ public class MainActivity extends AppCompatActivity {
 
                     mViewModel.setSpotifyService (mSpotifyService);
 
-                    mViewModel.getRecc ();
+//                    mViewModel.getRecc ();
 
                     AppRepo.getInstance ()
                             .getCurrentUser (mSpotifyService, MainActivity.this, new AppRepo.ResultListener () {
                                 @Override
                                 public void onUser (UserWrapper userWrapper) {
+
+
                                     Handler.createAsync (Looper.getMainLooper ())
-                                            .post (() -> mViewModel.setUser (userWrapper));
+                                            .post (() -> {
+                                                DB db = new DB (MainActivity.this);
+                                                db.login (userWrapper.user.id);
+                                                mViewModel.setUser (userWrapper);
+
+                                                String jsonArray = "[\"0\", \"1\"]";
+                                                Type listType = new TypeToken <List <String>> () {}.getType ();
+                                                List <String> list = new Gson ().fromJson (jsonArray, listType);
+                                                for (String s : list) {
+                                                    Log.e (TAG, "list: " + s);
+                                                }
+                                            });
                                 }
                             });
 

@@ -16,6 +16,7 @@ import com.google.gson.GsonBuilder;
 import com.guavaapps.components.bitmap.BitmapTools;
 import com.pixel.spotifyapi.Objects.Album;
 import com.pixel.spotifyapi.Objects.AudioFeaturesTrack;
+import com.pixel.spotifyapi.Objects.AudioFeaturesTracks;
 import com.pixel.spotifyapi.Objects.Recommendations;
 import com.pixel.spotifyapi.Objects.SeedsGenres;
 import com.pixel.spotifyapi.Objects.Track;
@@ -27,10 +28,13 @@ import com.spotify.protocol.types.Repeat;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Executors;
@@ -105,6 +109,173 @@ public class ContentViewModel extends ViewModel {
                         Log.e (TAG, error.getMessage ());
                     }
                 });
+
+        SpotifyService service = mSpotifyService.getValue ();
+
+        service.getSeedsGenres (new Callback <SeedsGenres> () {
+            @Override
+            public void success (SeedsGenres seedsGenres, Response response) {
+                seedsGenres.genres = seedsGenres.genres.subList (0, 1); // first 10
+
+                Map <String, List <Float>> map = new HashMap <> ();
+
+                for (String genre : seedsGenres.genres) {
+                    Map <String, Object> p = new HashMap <> ();
+                    p.put ("seed_genres", genre);
+                    p.put ("limit", 100);
+
+                    service.getRecommendations (params, new Callback <Recommendations> () {
+                        @Override
+                        public void success (Recommendations recommendations, Response response) {
+                            List <String> ids = new ArrayList <> ();
+
+                            for (Track t : recommendations.tracks) {
+                                ids.add (t.id);
+                            }
+
+                            String tracks = String.join (",", ids);
+                            service.getTracksAudioFeatures (tracks, new Callback <AudioFeaturesTracks> () {
+                                @Override
+                                public void success (AudioFeaturesTracks audioFeaturesTracks, Response response) {
+                                    Handler.createAsync (Looper.getMainLooper ())
+                                            .post (() -> {
+                                                Log.e (TAG, genre + " {");
+
+                                                for (Field f : AudioFeaturesTrack.class.getFields ()) {
+                                                    try {
+                                                        String field = f.getName ();
+//                                                        Log.e (TAG, "field class - " + f.getType ());
+                                                        if (f.getType ().equals (float.class) || f.getType ().equals (int.class)) {
+                                                            Analysis analysis = getSigma (audioFeaturesTracks, field, map);
+
+                                                            Log.e (TAG, "   " + field + " - " + analysis.m + " (" + (int) (100 * (analysis.sigma / analysis.m)) + "%)");
+                                                        }
+                                                    } catch (Exception e) {
+                                                        // ignore
+                                                    }
+                                                }
+
+                                                Log.e (TAG, "}");
+                                            });
+                                }
+
+                                @Override
+                                public void failure (RetrofitError error) {
+
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void failure (RetrofitError error) {
+
+                        }
+                    });
+                }
+
+                Handler.createAsync (Looper.getMainLooper ()).postDelayed (
+                        () -> {
+                            float minVSum = Float.MIN_VALUE;
+                            float maxVSum = Float.MAX_VALUE;
+                            String minParam = "";
+                            String maxParam = "";
+
+                            for (String param : map.keySet ()) {
+                                Float[] v = new Float[map.get (param).size ()];
+                                map.get (param).toArray (v);
+                                float vSum = getSigma (v).sigma;
+
+                                if (vSum < minVSum) {
+                                    minVSum = vSum;
+                                    minParam = param;
+                                }
+
+                                if (vSum > maxVSum) {
+                                    maxVSum = vSum;
+                                    maxParam = param;
+                                }
+
+                                Log.e (TAG, param + " - sigma=" + vSum);
+                            }
+
+                            Log.e (TAG, "param with lowest sigma - " + minParam);
+                        },
+                        5000
+                );
+            }
+
+            @Override
+            public void failure (RetrofitError error) {
+
+            }
+        });
+    }
+
+    class Analysis {
+        public float m;
+        public float sigma;
+
+        public Analysis (float m, float sigma) {
+            this.m = m;
+            this.sigma = sigma;
+        }
+    }
+
+    private Analysis getSigma (Float[] values) {
+        float sum = 0;
+        float sumDSq = 0;
+
+        for (float v : values) {
+            sum += v;
+        }
+
+        float m = sum / values.length;
+
+        for (float v : values) {
+            float d = v - m;
+            sumDSq += (d * d);
+        }
+
+        float variance = sumDSq / (values.length - 1);
+
+        return new Analysis (m, (float) Math.sqrt (variance));
+    }
+
+    private Analysis getSigma (AudioFeaturesTracks audioFeaturesTracks, String param, Map <String, List <Float>> map) {
+        float sum = 0;
+        float sumDSq = 0;
+
+        for (AudioFeaturesTrack audioFeatures : audioFeaturesTracks.audio_features) {
+            try {
+                sum += (float) audioFeatures.getClass ().getField (param).get (audioFeatures);
+            } catch (IllegalAccessException e) {
+//                e.printStackTrace ();
+            } catch (NoSuchFieldException e) {
+//                e.printStackTrace ();
+            }
+        }
+
+        float m = sum / audioFeaturesTracks.audio_features.size ();
+
+        for (AudioFeaturesTrack audioFeatures : audioFeaturesTracks.audio_features) {
+            try {
+                float d = (float) audioFeatures.getClass ().getField (param).get (audioFeatures) - m;
+                sumDSq += (d * d);
+
+                map.putIfAbsent (param, new ArrayList <> ());
+                float value = (float) audioFeatures.getClass ().getField (param).get (audioFeatures);
+                List <Float> v = map.get (param);
+                v.add (value);
+            } catch (IllegalAccessException e) {
+//                e.printStackTrace ();
+            } catch (NoSuchFieldException e) {
+//                e.printStackTrace ();
+            }
+        }
+
+        float variance = sumDSq / (audioFeaturesTracks.audio_features.size () - 1);
+
+        return new Analysis (m, (float) Math.sqrt (variance));
     }
 
     public void nextTrack (Context context) {

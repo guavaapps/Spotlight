@@ -5,8 +5,9 @@ import org.tensorflow.lite.Interpreter
 import retrofit.http.Body
 import retrofit.http.POST
 import java.io.File
+import kotlin.math.sign
 
-const val TAG = "Service"
+private const val TAG = "Service"
 
 interface LambdaService {
     @POST("/")
@@ -20,9 +21,6 @@ class LambdaModel {
 }
 
 class DLSTMPModel(model: File) {
-    private val MODEL = "model"
-    private val TF_LITE = ".tflite"
-
     private val LOOK_BACK = 1
 
     private var interpreter: Interpreter
@@ -31,7 +29,7 @@ class DLSTMPModel(model: File) {
         interpreter = Interpreter(model)
     }
 
-    fun getNextTest() {
+    fun getNextTest(): FloatArray {
         // create a 4-timestep, 2-feature timeline and run on test model
 
         val testTimeline = Array(4) { FloatArray(2) }
@@ -39,26 +37,63 @@ class DLSTMPModel(model: File) {
         return getNext(testTimeline)
     }
 
-    fun getNext(timeline: Array<FloatArray>) {
-        interpreter.allocateTensors()
-
-        val output = arrayOf(
-            FloatArray(2)
+    fun testOn5 (): FloatArray {
+        val testTimeline = arrayOf(
+            floatArrayOf(0.15f, 0.7f),
+            floatArrayOf(0.15f, 0.7f),
+            floatArrayOf(0.05f, 0.6f),
+            floatArrayOf(0.05f, 0.5f),
+            floatArrayOf(0.05f, 0.45f),
         )
 
-        val inputShape = interpreter.getInputTensor(0).shape()
-        Log.e(TAG, "inputShape - (${inputShape.joinToString(", ")})")
+        return getNext(testTimeline)
+    }
 
-        interpreter.run(arrayOf(timeline), output)
+    fun getNext(timeline: Array<FloatArray>): FloatArray {
+        interpreter.allocateTensors()
 
-        val o = output[0][0]
-        Log.e(TAG, "output - $o")
+//        checkInputShape(interpreter, timeline)
+
+        val DEBUG_TIMESTAMP = System.currentTimeMillis()
+
+        Log.d(
+            TAG,
+            "running inference - timestamp=$DEBUG_TIMESTAMP timeline=[${timeline.size} ${timeline.first().size}] inputShape=[${
+                interpreter.getInputTensor(0).shape().joinToString(" ")
+            }]"
+        )
+
+        val output = arrayOf(
+            FloatArray(timeline.first().size)
+        )
+
+        val timelineScaler = scaleMinMax(timeline)
+        val scaledTimeline = timelineScaler.result
+
+        interpreter.run(arrayOf(scaledTimeline), output)
 
         interpreter.close()
+
+        return invertMinMax(timelineScaler.apply {
+            result = output
+        })[0].also {
+            Log.d(
+                TAG,
+                "result for timeline - size=${timeline.size} features=${timeline.first().size} result=[${
+                    it.joinToString(" ")
+                }]"
+            )
+        }
+    }
+
+    private fun checkInputShape(interpreter: Interpreter, timeline: Array<FloatArray>) {
+        val inputShape = interpreter.getInputTensor(0).shape().slice(1..1) // batch size (at index 0) is always 1
+
+        if (inputShape [0] != timeline.size || inputShape [1] != timeline.first().size) throw IllegalArgumentException("Timeline doesn't match required input shape - inputShape=[$inputShape] timeline=[${timeline.first().size}]")
     }
 
     private fun createBatches(timeline: FloatArray): Array<FloatArray> {
-        val scaled = scaleMinMax(timeline)
+//        val scaled = scaleMinMax(timeline)
         var batches = mutableListOf<FloatArray>()
 
         for (i in 0..timeline.size - LOOK_BACK - 1) {
@@ -69,32 +104,52 @@ class DLSTMPModel(model: File) {
         return batches.toTypedArray()
     }
 
-    private fun load(): Interpreter {
-        val model: File = File.createTempFile(MODEL, TF_LITE)
+    private fun scaleMinMax(data: Array<FloatArray>): Scaler {
+        var min = Float.MIN_VALUE
+        var max = Float.MAX_VALUE
 
-        // TODO write output stream to model file
+        data.forEach { x ->
+            val mn = x.min()
+            val mx = x.max()
 
-        return Interpreter(model)
+            if (mn < min) min = mn
+            if (mx < max) max = mx
+        }
+
+        var scaled = Array(data.size) { i ->
+            val d = max - min
+
+            FloatArray(data[i].size) { j ->
+                (data[i][j] - min) / d
+            }
+        }
+
+
+        return Scaler(
+            scaled,
+            min,
+            max
+        )
     }
 
-    private fun loadFromFile(model: File): Interpreter {
-        return Interpreter(model)
+    private fun invertMinMax(data: Scaler): Array<FloatArray> {
+        val delta = data.max - data.min
+
+        var inverted = Array(data.result.size) { i ->
+
+            FloatArray(data.result[i].size) { j ->
+                data.result[i][j] * delta + data.min
+            }
+        }
+
+        return inverted
     }
 
-    private fun scaleMinMax(data: FloatArray): FloatArray {
-        var scaled = FloatArray(data.size)
-        val min = data.min()
-        val max = data.max()
-        val d = max - min
-
-        data.forEachIndexed { i, x -> scaled[i] = (x - min) / d }
-
-        return scaled
-    }
-
-    private fun invertMinMax() {
-
-    }
+    private data class Scaler(
+        var result: Array<FloatArray>,
+        var min: Float,
+        var max: Float
+    )
 }
 
 // POST

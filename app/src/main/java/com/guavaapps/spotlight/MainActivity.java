@@ -145,7 +145,10 @@ public class MainActivity extends AppCompatActivity {
                 // [0.05405406]
                 // [0.04826255]]
 
-                model.getNextTest ();
+                //[[0.08406813 0.62631917]] testOn5 ()
+
+//                model.getNextTest ();
+                model.testOn5 ();
             } catch (Exception e) {
                 e.printStackTrace ();
             }

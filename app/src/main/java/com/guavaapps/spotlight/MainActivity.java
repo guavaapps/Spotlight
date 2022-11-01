@@ -20,6 +20,8 @@ import androidx.navigation.fragment.NavHostFragment;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.reflect.TypeToken;
+import com.guavaapps.components.color.Argb;
+import com.guavaapps.components.color.Hct;
 import com.pixel.spotifyapi.Objects.UserPrivate;
 import com.pixel.spotifyapi.SpotifyApi;
 import com.pixel.spotifyapi.SpotifyService;
@@ -30,7 +32,13 @@ import com.spotify.sdk.android.auth.AuthorizationClient;
 import com.spotify.sdk.android.auth.AuthorizationRequest;
 import com.spotify.sdk.android.auth.AuthorizationResponse;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Type;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.List;
 import java.util.concurrent.Executors;
 
@@ -64,6 +72,52 @@ public class MainActivity extends AppCompatActivity {
         return String.format ("#%06X", color & 0xffffff);
     }
 
+    private void getC (int c) {
+        Log.e (TAG, "approx");
+        getApproxInc (c);
+        Log.e (TAG, "inc");
+        getInc (c);
+
+        Hct tf = Hct.Companion.fromInt (c);//Argb.Companion.from (r, g, b, 0).toInt ());
+        float tone = tf.getTone ();
+
+        Log.e (TAG, String.format ("tone=%f", tone));
+    }
+
+    private void getInc (int c) {
+        Hct tf = Hct.Companion.fromInt (c);
+
+        int approxC = c - (c % 10);
+        int startT = -approxC + 10;
+        int endT = 100 - approxC;
+
+        float tone = tf.getTone ();
+
+        for (int i = startT; i < endT; i += 10) {
+            tf.setTone (tone + i);
+            Log.e (TAG, i + ": " + getHex (
+                    tf.toInt ()
+            ));
+        }
+    }
+
+    private void getApproxInc (int c) {
+        Hct tf = Hct.Companion.fromInt (c);
+
+        for (int i = 10; i < 100; i += 10) {
+            tf.setTone (i);
+            Log.e (TAG, i + ": " + getHex (
+                    tf.toInt ()
+            ));
+        }
+    }
+
+    private void getColorForTone (int color, float tone) {
+        Hct hct = Hct.Companion.fromInt (color);
+        hct.setTone (tone);
+        Log.e (TAG, "tf" + tone + " " + getHex (hct.toInt ()));
+    }
+
     @SuppressLint ("ClickableViewAccessibility")
     @Override
     protected void onCreate (Bundle savedInstanceState) {
@@ -72,6 +126,51 @@ public class MainActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows (getWindow (), false);
 
         setContentView (R.layout.activity_main);
+
+        try {
+            FileInputStream fileInputStream = getAssets ().openFd ("model2.tflite").createInputStream ();
+            FileChannel fileChannel = fileInputStream.getChannel ();
+            File f = File.createTempFile ("model2", ".tflite");
+            FileOutputStream out = new FileOutputStream (f);
+            byte[] bytes = new byte[fileInputStream.available ()];
+            fileInputStream.read (bytes);
+            out.write (bytes);
+            out.flush ();
+            out.close ();
+            try {
+                DLSTMPModel model = new DLSTMPModel (f);
+
+                //0.01544402]
+                // [0.02702703]
+                // [0.05405406]
+                // [0.04826255]]
+
+                model.getNextTest ();
+            } catch (Exception e) {
+                e.printStackTrace ();
+            }
+        } catch (IOException e) {
+            e.printStackTrace ();
+        }
+
+
+        int tf = Argb.Companion.from (255, 255, 111, 0).toInt ();
+        int sp = Argb.Companion.from (255, 30, 215, 96).toInt ();
+        int spl = Argb.Companion.from (255, 102, 0, 115).toInt ();
+        int mng = Argb.Companion.from (255, 102, 0, 115).toInt (); // 19, 170, 82
+
+        tf = sp;
+
+        Hct hct = Hct.Companion.fromInt (tf);
+        Log.e (TAG, "tone=" + hct.getTone ());
+
+        getColorForTone (tf, 10);
+        getColorForTone (tf, 40);
+        getColorForTone (tf, 50);
+        getColorForTone (tf, 60);
+        getColorForTone (tf, 70);
+        getColorForTone (tf, 80);
+        getColorForTone (tf, 90);
 
 //        LSTMSHNode node = new LSTMSHNode ();
 //        node.create (4);
@@ -163,7 +262,8 @@ public class MainActivity extends AppCompatActivity {
                                                 mViewModel.setUser (userWrapper);
 
                                                 String jsonArray = "[\"0\", \"1\"]";
-                                                Type listType = new TypeToken <List <String>> () {}.getType ();
+                                                Type listType = new TypeToken <List <String>> () {
+                                                }.getType ();
                                                 List <String> list = new Gson ().fromJson (jsonArray, listType);
                                                 for (String s : list) {
                                                     Log.e (TAG, "list: " + s);

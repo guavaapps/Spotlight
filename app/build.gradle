@@ -54,6 +54,9 @@ dependencies {
 
     implementation 'com.guavaapps.components:components:1.0.0-alpha05'
 
+    implementation 'org.tensorflow:tensorflow-lite:2.5.0'
+    implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:2.5.0'
+
     implementation files('libs/spotify-app-remote-release-0.7.2.aar')
     implementation files('libs/com.pixel.spotifyapi.SpotifyApi-1.0.0.aar')
 

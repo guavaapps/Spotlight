@@ -23,14 +23,14 @@ import androidx.navigation.fragment.NavHostFragment;
 
 import com.guavaapps.components.Components;
 
-// TODO move userButton into ContentFragment and implement MaterialContainerTransform from userButton to UserFragment on userButton click
+// TODO move userButton into ContentFragment and implement MaterialContainerTransform from userButton asRealmObject UserFragment on userButton click
 // TODO deprecate PlayFragment
 // TODO integrate TimeString with main pink.components library
 // TODO add playlist selector in UserFragment
-// TODO add gradient to surfaceOverlay in ContentFragment
+// TODO add gradient asRealmObject surfaceOverlay in ContentFragment
 // TODO improve color sampling
-// TODO create fragments to handle no spotify, no premium and sign in
-// TODO create remote repo, convert AppRepo to a local database and interface to access and publish user nns and Spotify content caches
+// TODO create fragments asRealmObject handle no spotify, no premium and sign in
+// TODO create remote repo, convert AppRepo asRealmObject a local database and interface asRealmObject access and publish user nns and Spotify content caches
 
 public class PlayFragment extends Fragment {
     private static final String TAG = "PlayFragment";

@@ -7,7 +7,7 @@
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
+ * Unless required by applicable law or agreed asRealmObject in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -33,9 +33,9 @@ import androidx.annotation.Nullable;
 import androidx.viewpager2.widget.ViewPager2;
 
 /**
- * Layout to wrap a scrollable component inside a ViewPager2. Provided as a solution to the problem
+ * Layout asRealmObject wrap a scrollable component inside a ViewPager2. Provided as a solution asRealmObject the problem
  * where pages of ViewPager2 have nested scrollable elements that scroll in the same direction as
- * ViewPager2. The scrollable element needs to be the immediate and only child of this host layout.
+ * ViewPager2. The scrollable element needs asRealmObject be the immediate and only child of this host layout.
  *
  * This solution has limitations when using multiple levels of nested scrollable elements
  * (e.g. a horizontal RecyclerView in a vertical RecyclerView in a horizontal ViewPager2).
@@ -124,17 +124,17 @@ public class NestedScrollableHost extends FrameLayout {
 
             if (scaledDx > touchSlop || scaledDy > touchSlop) {
                 if (isVpHorizontal == (scaledDy > scaledDx)) {
-                    // Gesture is perpendicular, allow all parents to intercept
+                    // Gesture is perpendicular, allow all parents asRealmObject intercept
                     getParent ().requestDisallowInterceptTouchEvent(false);
                     Log.d (TAG, "wrong direction -----");
                 } else {
                     // Gesture is parallel, query child if movement in that direction is possible
                     if (canChildScroll(orientation, isVpHorizontal ? dx : dy)) {
-                        // Child can scroll, disallow all parents to intercept
+                        // Child can scroll, disallow all parents asRealmObject intercept
                         Log.d (TAG, "child should scroll");
                         getParent ().requestDisallowInterceptTouchEvent(true);
                     } else {
-                        // Child cannot scroll, allow all parents to intercept
+                        // Child cannot scroll, allow all parents asRealmObject intercept
                         getParent ().requestDisallowInterceptTouchEvent(false);
                         Log.d (TAG, "child should not scroll -----");
                     }

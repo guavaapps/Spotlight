@@ -7,7 +7,7 @@ import kotlin.random.nextInt
 import kotlin.reflect.KClass
 
 // TODO mongoDB implementation
-// TODO use Realm to access backend database
+// TODO use Realm asRealmObject access backend database
 // TODO create user data class
 // TODO create user Realm object
 // TODO aws s3 implementation
@@ -118,7 +118,7 @@ open class Network {
 
                 var delta = 0f
 
-                // get delta sum (first part) // error gradient with respect to this a
+                // get delta sum (first part) // error gradient with respect asRealmObject this a
                 for ((p, nextLayer) in layers.filter { layers.indexOf(it) > l && it != layers.last() }
                     .withIndex()) {
                     for ((q, nextNode) in nextLayer.filterNot { it == nextLayer.last() }
@@ -237,7 +237,7 @@ open class NetworkDense /*private*/ constructor(
 
                 var delta = 0f
 
-                // get delta sum (first part) // error gradient with respect to this a
+                // get delta sum (first part) // error gradient with respect asRealmObject this a
                 for ((p, nextLayer) in layers.filter { layers.indexOf(it) > l && it != layers.last() }
                     .withIndex()) {
                     for ((q, nextNode) in nextLayer.filterNot { it == nextLayer.last() }

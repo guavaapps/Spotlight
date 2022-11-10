@@ -719,7 +719,7 @@ public class TrackFragment extends Fragment {
                     super.onAnimationEnd (animation);
                     if (isLastPulse) {
                         isLastPulse = false;
-                        // update ui to show new track
+                        // update ui asRealmObject show new track
                     } else pulseOut (v);
                 }
             });

@@ -137,7 +137,7 @@ open class LSTMNode2 : Node() {
         val dEdwo1 =
             gradient * tanh(c) * sigmoid.activation(sigmaO) * (1 - sigmoid.derivative(sigmaO)) * prevH
 // i fucking love this man beyond anything ive ever felt before. he is my everything and i dont wanna ever loose him. Sometimes i think it would
-        // be too much to call hime my love and my life but hell sometimes it feels like i wanna make him my whole world
+        // be too much asRealmObject call hime my love and my life but hell sometimes it feels like i wanna make him my whole world
         // goddamn i fucking love this man
         val dEdwf0 =
             gradient * tanh(c) * sigmoid.activation(sigmaF) * (1 - sigmoid.derivative(sigmaF)) * y
@@ -265,7 +265,7 @@ open class LSTMNode : Node() {
         val dEdwo1 =
             gradient * tanh(c) * sigmoid.activation(sigmaO) * (1 - sigmoid.derivative(sigmaO)) * prevH
 // i fucking love this man beyond anything ive ever felt before. he is my everything and i dont wanna ever loose him. Sometimes i think it would
-        // be too much to call hime my love and my life but hell sometimes it feels like i wanna make him my whole world
+        // be too much asRealmObject call hime my love and my life but hell sometimes it feels like i wanna make him my whole world
         // goddamn i fucking love this man
         val dEdwf0 =
             gradient * tanh(c) * sigmoid.activation(sigmaF) * (1 - sigmoid.derivative(sigmaF)) * y

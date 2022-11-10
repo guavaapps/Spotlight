@@ -1,527 +1,580 @@
-package com.guavaapps.spotlight;
+package com.guavaapps.spotlight
 
-import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Log;
+import android.content.Context
+import com.guavaapps.components.bitmap.BitmapTools.from
+import com.pixel.spotifyapi.SpotifyService
+import com.spotify.android.appremote.api.SpotifyAppRemote
+import android.os.Looper
+import com.guavaapps.spotlight.AppRepo.ResultListener
+import android.graphics.Bitmap
+import com.spotify.protocol.types.PlayerState
+import com.spotify.protocol.types.Repeat
+import com.google.gson.GsonBuilder
+import android.graphics.BitmapFactory
+import android.os.Handler
+import android.util.Log
+import androidx.lifecycle.*
+import com.guavaapps.spotlight.realm.Track
+import com.guavaapps.spotlight.realm.TrackModel
+import com.pixel.spotifyapi.Objects.*
+import io.realm.Realm
+import io.realm.RealmList
+import retrofit.Callback
+import retrofit.RetrofitError
+import retrofit.client.Response
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.lang.Exception
+import java.nio.charset.StandardCharsets
+import java.util.*
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
-import androidx.lifecycle.LiveData;
-import androidx.lifecycle.MutableLiveData;
-import androidx.lifecycle.ViewModel;
+class ContentViewModel(
+    private val app: Ky,
+) : ViewModel() {
+    lateinit var userRepository: UserRepository
+    lateinit var mongoClient: MongoClient
+    lateinit var modelRepository: ModelRepository
+    lateinit var localRealm: LocalRealm
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.guavaapps.components.bitmap.BitmapTools;
-import com.pixel.spotifyapi.Objects.Album;
-import com.pixel.spotifyapi.Objects.AudioFeaturesTrack;
-import com.pixel.spotifyapi.Objects.AudioFeaturesTracks;
-import com.pixel.spotifyapi.Objects.Recommendations;
-import com.pixel.spotifyapi.Objects.SeedsGenres;
-import com.pixel.spotifyapi.Objects.Track;
-import com.pixel.spotifyapi.Objects.TrackSimple;
-import com.pixel.spotifyapi.SpotifyService;
-import com.spotify.android.appremote.api.PlayerApi;
-import com.spotify.android.appremote.api.SpotifyAppRemote;
-import com.spotify.protocol.types.Repeat;
+    private var isWaiting = false
+    private var needsTrack = true
+    private var needsNextTrack = true
+    private val tracks: Queue<TrackWrapper?> = LinkedList()
+    private val spotifyService = MutableLiveData<SpotifyService>()
+    private val spotifyAppRemote = MutableLiveData<SpotifyAppRemote>()
+    private val user = MutableLiveData<UserWrapper>()
+    private val track = MutableLiveData<TrackWrapper?>()
+    private val progress = MutableLiveData<Long>()
+    private val nextTrack = MutableLiveData<TrackWrapper?>()
+    private val album: MutableLiveData<AlbumWrapper?> = MutableLiveData()
+    private var mPlayerStateListener: ScheduledExecutorService? = null
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.lang.reflect.Field;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+    private var featuresMap = mapOf(
+        "acousticness" to 0,
+        "analysis_url" to 1,
+        "danceability" to 2,
+        "duration_ms" to 3,
+        "energy" to 4,
+        "instrumentalness" to 5,
+        "key" to 6,
+        "liveness" to 7,
+        "loudness" to 8,
+        "mode" to 9,
+        "speechiness" to 10,
+        "tempo" to 11,
+        "time_signature" to 12,
+        "valence" to 13
+    )
 
-import retrofit.Callback;
-import retrofit.RetrofitError;
-import retrofit.client.Response;
+    private var localTimeline = mutableListOf<FloatArray>()
 
-// TODO deprecate app repo
-public class ContentViewModel extends ViewModel {
-    private static final String TAG = "ViewModel";
-    private boolean mIsWaiting = false;
-    private boolean mNeedsTrack = true;
-    private boolean mNeedsNextTrack = true;
-    private Queue <TrackWrapper> mTracks = new LinkedList <> ();
+    fun initForUser(context: Context, userId: String, reset: Boolean = true) {
+        logOutUser()
 
-    private MutableLiveData <SpotifyService> mSpotifyService = new MutableLiveData <> ();
-    private MutableLiveData <SpotifyAppRemote> mSpotifyAppRemote = new MutableLiveData <> ();
-    private MutableLiveData <UserWrapper> mUser = new MutableLiveData <> ();
-    private MutableLiveData <TrackWrapper> mTrack = new MutableLiveData <> ();
-    private MutableLiveData <Long> mProgress = new MutableLiveData <> ();
-    private MutableLiveData <TrackWrapper> mNextTrack = new MutableLiveData <> ();
+        mongoClient = MongoClient(context)
 
-    private MutableLiveData <AlbumWrapper> mAlbum = new MutableLiveData <> ();
+        val remoteModelDataSource = RemoteModelDataSource()
 
-    private ScheduledExecutorService mPlayerStateListener;
+        modelRepository = ModelRepository(
+            userId,
+            mongoClient,
+            remoteModelDataSource
+        )
 
-    public void getRecc () {
-        Map <String, Object> params = new HashMap <> ();
-        params.put ("seed_artists", "7dGJo4pcD2V6oG8kP0tJRR");
-        params.put ("seed_genres", "hip-hop");
+        userRepository = UserRepository(
+            userId,
+            mongoClient
+        )
 
-        mSpotifyService.getValue ()
-                .getRecommendations (params, new Callback <Recommendations> () {
-                    @Override
-                    public void success (Recommendations recommendations, Response response) {
-                        for (Track track : recommendations.tracks) {
-//                            Log.e (TAG, "track: " + track.name + " by " + track.artists.get (0).name);
-                        }
+        localRealm = LocalRealm(context)
 
-                        mSpotifyService.getValue ()
-                                .getTrackAudioFeatures (recommendations.tracks.get (0).id, new Callback <AudioFeaturesTrack> () {
-                                    @Override
-                                    public void success (AudioFeaturesTrack audioFeaturesTrack, Response response) {
-//                                        Log.e (TAG, "audio features for " + recommendations.tracks.get (0).name);
-//                                        Log.e (TAG, "type: " + audioFeaturesTrack.type);
-//                                        Log.e (TAG, "acousticness: " + audioFeaturesTrack.acousticness);
-//                                        Log.e (TAG, "danceability: " + audioFeaturesTrack.danceability);
-//                                        Log.e (TAG, "energy: " + audioFeaturesTrack.energy);
-//                                        Log.e (TAG, "instrumentalness: " + audioFeaturesTrack.instrumentalness);
-//                                        Log.e (TAG, "key: " + audioFeaturesTrack.key);
-//                                        Log.e (TAG, "liveness: " + audioFeaturesTrack.liveness);
-//                                        Log.e (TAG, "loudness: " + audioFeaturesTrack.loudness);
-//                                        Log.e (TAG, "speechiness: " + audioFeaturesTrack.speechiness);
-//                                        Log.e (TAG, "tempo: " + audioFeaturesTrack.tempo);
-//                                        Log.e (TAG, "time_signature: " + audioFeaturesTrack.time_signature);
-//                                        Log.e (TAG, "valence: " + audioFeaturesTrack.valence);
-//                                        Log.e (TAG, "mode: " + audioFeaturesTrack.mode);
-                                    }
+        getUser()
+        getNext()
+    }
 
-                                    @Override
-                                    public void failure (RetrofitError error) {
+    fun logOutUser() {
+        val user = userRepository.get()
+        user.timeline.addAll(
+            localTimeline.map {
+                TrackModel().apply {
+                    features = RealmList(*it.toTypedArray())
+                }
+            }
+        )
 
-                                    }
-                                });
-                    }
+        userRepository.update(user)
+    }
 
-                    @Override
-                    public void failure (RetrofitError error) {
-                        Log.e (TAG, error.getMessage ());
-                    }
-                });
+    fun getUser() {
+        spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
+            override fun success(t: UserPrivate?, response: Response?) {
+                user.value = UserWrapper(
+                    t!!,
+                    from(t.images[0].url)
+                )
+            }
 
-        SpotifyService service = mSpotifyService.getValue ();
+            override fun failure(error: RetrofitError?) {
+                // retry login
+            }
 
-        service.getSeedsGenres (new Callback <SeedsGenres> () {
-            @Override
-            public void success (SeedsGenres seedsGenres, Response response) {
-                seedsGenres.genres = seedsGenres.genres.subList (0, 1); // first 10
+        })
+    }
 
-                Map <String, List <Float>> map = new HashMap <> ();
+    private fun getNextTrackFeatures(): FloatArray {
+        val model = modelRepository.model
 
-                for (String genre : seedsGenres.genres) {
-                    Map <String, Object> p = new HashMap <> ();
-                    p.put ("seed_genres", genre);
-                    p.put ("limit", 100);
+        scaleMinMax(localTimeline.toTypedArray()).also {
+            return invertMinMax(
+                it.apply {
+                    result = arrayOf(model.getNext(it.result))
+                }
+            ).first()
+        }
+    }
 
-                    service.getRecommendations (params, new Callback <Recommendations> () {
-                        @Override
-                        public void success (Recommendations recommendations, Response response) {
-                            List <String> ids = new ArrayList <> ();
+    private fun createParamsObject(features: FloatArray): Map<String, Any> {
+        var map = mutableMapOf<String, Any>(
+            "genre_seed" to "hip_hop"
+        )
+        map.putAll(
+            features.mapIndexed { i, feature -> "target_" + featuresMap.filterValues { it == i }.keys.first() to feature }
+                .toMap()
+        )
 
-                            for (Track t : recommendations.tracks) {
-                                ids.add (t.id);
-                            }
+        Log.e(TAG, "map - $map")
 
-                            String tracks = String.join (",", ids);
-                            service.getTracksAudioFeatures (tracks, new Callback <AudioFeaturesTracks> () {
-                                @Override
-                                public void success (AudioFeaturesTracks audioFeaturesTracks, Response response) {
-                                    Handler.createAsync (Looper.getMainLooper ())
-                                            .post (() -> {
-                                                Log.e (TAG, genre + " {");
+        return map.toMap()
+    }
 
-                                                for (Field f : AudioFeaturesTrack.class.getFields ()) {
-                                                    try {
-                                                        String field = f.getName ();
-//                                                        Log.e (TAG, "field class - " + f.getType ());
-                                                        if (f.getType ().equals (float.class) || f.getType ().equals (int.class)) {
-                                                            Analysis analysis = getSigma (audioFeaturesTracks, field, map);
+    private var hasRetried = false
 
-                                                            Log.e (TAG, "   " + field + " - " + analysis.m + " (" + (int) (100 * (analysis.sigma / analysis.m)) + "%)");
-                                                        }
-                                                    } catch (Exception e) {
-                                                        // ignore
-                                                    }
-                                                }
-
-                                                Log.e (TAG, "}");
-                                            });
-                                }
-
-                                @Override
-                                public void failure (RetrofitError error) {
-
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void failure (RetrofitError error) {
-
-                        }
-                    });
+    fun getAlbum() {
+        spotifyService.value!!.getAlbum(track.value!!.track.album.id,
+            object : Callback<Album> {
+                override fun success(t: Album?, response: Response?) {
+                    album.value = AlbumWrapper(
+                        t,
+                        from(t!!.images[0].url)
+                    )
                 }
 
-                Handler.createAsync (Looper.getMainLooper ()).postDelayed (
-                        () -> {
-                            float minVSum = Float.MIN_VALUE;
-                            float maxVSum = Float.MAX_VALUE;
-                            String minParam = "";
-                            String maxParam = "";
+                override fun failure(error: RetrofitError?) {
 
-                            for (String param : map.keySet ()) {
-                                Float[] v = new Float[map.get (param).size ()];
-                                map.get (param).toArray (v);
-                                float vSum = getSigma (v).sigma;
+                }
 
-                                if (vSum < minVSum) {
-                                    minVSum = vSum;
-                                    minParam = param;
-                                }
-
-                                if (vSum > maxVSum) {
-                                    maxVSum = vSum;
-                                    maxParam = param;
-                                }
-
-                                Log.e (TAG, param + " - sigma=" + vSum);
-                            }
-
-                            Log.e (TAG, "param with lowest sigma - " + minParam);
-                        },
-                        5000
-                );
-            }
-
-            @Override
-            public void failure (RetrofitError error) {
-
-            }
-        });
+            })
     }
 
-    class Analysis {
-        public float m;
-        public float sigma;
+    fun getNext() {
+        // The next batch has already been requested from the Spotify Api, listen for changes to ContentViewModel.track
+        if (isWaiting) return
 
-        public Analysis (float m, float sigma) {
-            this.m = m;
-            this.sigma = sigma;
-        }
-    }
+        val next = tracks.poll()
+        if (next != null) {
+            track.value = next
+            val needsAlbum =
+                album == null || album.value!!.album.id != track.value!!.track.album.id
 
-    private Analysis getSigma (Float[] values) {
-        float sum = 0;
-        float sumDSq = 0;
+            val album = localRealm.get(
+                com.guavaapps.spotlight.realm.AlbumWrapper::class.java,
+                track.value!!.track.album.id
+            )
 
-        for (float v : values) {
-            sum += v;
-        }
-
-        float m = sum / values.length;
-
-        for (float v : values) {
-            float d = v - m;
-            sumDSq += (d * d);
-        }
-
-        float variance = sumDSq / (values.length - 1);
-
-        return new Analysis (m, (float) Math.sqrt (variance));
-    }
-
-    private Analysis getSigma (AudioFeaturesTracks audioFeaturesTracks, String param, Map <String, List <Float>> map) {
-        float sum = 0;
-        float sumDSq = 0;
-
-        for (AudioFeaturesTrack audioFeatures : audioFeaturesTracks.audio_features) {
-            try {
-                sum += (float) audioFeatures.getClass ().getField (param).get (audioFeatures);
-            } catch (IllegalAccessException e) {
-//                e.printStackTrace ();
-            } catch (NoSuchFieldException e) {
-//                e.printStackTrace ();
+            if (needsAlbum && album != null) {
+                this.album.value = album as AlbumWrapper
             }
-        }
-
-        float m = sum / audioFeaturesTracks.audio_features.size ();
-
-        for (AudioFeaturesTrack audioFeatures : audioFeaturesTracks.audio_features) {
-            try {
-                float d = (float) audioFeatures.getClass ().getField (param).get (audioFeatures) - m;
-                sumDSq += (d * d);
-
-                map.putIfAbsent (param, new ArrayList <> ());
-                float value = (float) audioFeatures.getClass ().getField (param).get (audioFeatures);
-                List <Float> v = map.get (param);
-                v.add (value);
-            } catch (IllegalAccessException e) {
-//                e.printStackTrace ();
-            } catch (NoSuchFieldException e) {
-//                e.printStackTrace ();
-            }
-        }
-
-        float variance = sumDSq / (audioFeaturesTracks.audio_features.size () - 1);
-
-        return new Analysis (m, (float) Math.sqrt (variance));
-    }
-
-    public void nextTrack (Context context) {
-        TrackWrapper nextTrack = mTracks.poll ();
-        if (nextTrack != null) {
-            mTrack.setValue (nextTrack);
-
-            boolean needsAlbum = mAlbum == null || !mAlbum.getValue ().album.id.equals (mTrack.getValue ().track.album.id);
-
-            if (needsAlbum && AppRepo.getInstance ().isAlbumCached (context, nextTrack.track.album.id)) {
-                album (context, nextTrack.track.album.id);
-            }
-
-            if (mTracks.peek () != null) {
-                mNextTrack.setValue (mTracks.peek ());
+            if (tracks.peek() != null) {
+                nextTrack.value = tracks.peek()
             } else {
-                mNeedsNextTrack = true;
-                mNextTrack.setValue (null);
-            }
-        } else {
-            mNeedsTrack = true;
-            mTrack.setValue (null);
-        }
+                nextTrack.value = null
 
-        if (!mIsWaiting) {
-            mIsWaiting = true;
-            AppRepo.getInstance ()
-                    .getNextTrack (mSpotifyService.getValue (), new AppRepo.NextTrackListener () {
-                        @Override
-                        public void onGetTrack (TrackWrapper trackWrapper) {
-                            if (mNeedsTrack) {
-                                mNeedsTrack = false;
-                                mTrack.setValue (trackWrapper);
-                                if (AppRepo.getInstance ().isAlbumCached (context, trackWrapper.track.album.id)) {
-                                    album (context, trackWrapper.track.album.id);
-                                }
-                            } else {
-                                mTracks.add (trackWrapper);
+                isWaiting = true
 
-                                if (mNeedsNextTrack) {
-                                    mNeedsNextTrack = false;
-                                    mNextTrack.setValue (trackWrapper);
-                                }
+                spotifyService.value!!.getRecommendations(
+                    createParamsObject(
+                        getNextTrackFeatures()
+                    ), object : Callback<Recommendations> {
+                        override fun success(t: Recommendations?, response: Response?) {
+                            t!!.tracks.removeFirst().also {
+                                track.value = TrackWrapper(
+                                    it,
+                                    from(it.album.images[0].url)
+                                )
                             }
 
-                            if (mTracks.size () <= 1) {
-                                AppRepo.getInstance ()
-                                        .getNextTrack (mSpotifyService.getValue (), this);
+                            t!!.tracks.removeFirst().also {
+                                nextTrack.value = TrackWrapper(
+                                    it,
+                                    from(it.album.images[0].url)
+                                )
+                            }
+
+                            tracks.addAll(t!!.tracks
+                                .slice(2..tracks.indices.last - 1)
+                                .map {
+                                    TrackWrapper(
+                                        it,
+                                        from(it.album.images[0].url)
+                                    )
+                                })
+
+                            isWaiting = false
+                        }
+
+                        override fun failure(error: RetrofitError?) {
+                            // unlock the spotify api
+                            isWaiting = false
+
+                            if (error!!.response.status == 401) {
+                                // reauth the user
+                            }
+
+
+                            // retry once TODO retry many?
+                            if (!hasRetried) {
+                                hasRetried = true
+                                getNext()
                             } else {
-                                mIsWaiting = false;
+                                // were fucked
                             }
                         }
-                    });
+                    })
+
+            }
         }
     }
 
-    public void album2 (Context context, String id) {
-        AppRepo.getInstance ()
-                .getAlbum (getSpotifyService ().getValue (), context, id, new AppRepo.ResultListener () {
-                    @Override
-                    public void onAlbum (AlbumWrapper albumWrapper) {
-                        super.onAlbum (albumWrapper);
-                        Handler.createAsync (Looper.getMainLooper ())
-                                .post (() -> mAlbum.setValue (albumWrapper));
-                    }
-                });
+    fun logSuccess(tracks: Array<Track>) {
+        val ids = tracks.map { it.id }
+
+        spotifyService.value!!.getTracksAudioFeatures(
+            ids.joinToString(","),
+            object : Callback<AudioFeaturesTracks> {
+                override fun success(t: AudioFeaturesTracks?, response: Response?) {
+                    localTimeline.addAll(t!!.audio_features.map { it.extractFeatures() })
+                }
+
+                override fun failure(error: RetrofitError?) {
+
+                }
+            }
+        )
     }
 
-    private static void cacheAlbumObject (Context context, AlbumWrapper wrappedAlbum) {
-        Album album = wrappedAlbum.album;
-        Bitmap bitmap = wrappedAlbum.bitmap;
+    private fun scaleMinMax(data: Array<FloatArray>): Scaler {
+        var min = Float.MIN_VALUE
+        var max = Float.MAX_VALUE
 
-        wrappedAlbum.album.available_markets = Arrays.asList ("");
+        data.forEach { x ->
+            val mn = x.min()
+            val mx = x.max()
 
-        for (TrackSimple trackSimple : wrappedAlbum.album.tracks.items) {
-            trackSimple.available_markets = Arrays.asList ("");
+            if (mn < min) min = mn
+            if (mx < max) max = mx
         }
 
-        try {
-            FileOutputStream albumOutputStream = new FileOutputStream (context.getCacheDir () + "/" + album.id + ".album");
-            FileOutputStream outputStream = new FileOutputStream (context.getCacheDir () + "/" + album.id + ".jpeg");
-            bitmap.compress (Bitmap.CompressFormat.JPEG, 100, outputStream);
-            outputStream.flush ();
-            outputStream.close ();
+        var scaled = Array(data.size) { i ->
+            val d = max - min
 
-            Gson gson = new GsonBuilder ()
-                    .setPrettyPrinting ()
-                    .setLenient ()
-                    .create ();
-
-            String s = gson.toJson (album);
-            albumOutputStream.write (s.getBytes (StandardCharsets.UTF_8));
-            albumOutputStream.flush ();
-            albumOutputStream.close ();
-        } catch (Exception e) {
-        }
-    }
-
-    private static AlbumWrapper buildAlbumObject (Context context, String id) {
-        AlbumWrapper wrappedAlbum = null;
-
-        Album album = null;
-        Bitmap bitmap = null;
-
-        try {
-            FileInputStream albumInputStream = new FileInputStream (context.getCacheDir () + "/" + id + ".album");
-            FileInputStream inputStream = new FileInputStream (context.getCacheDir () + "/" + id + ".jpeg");
-            bitmap = BitmapFactory.decodeStream (inputStream);
-
-            Gson gson = new GsonBuilder ()
-                    .setPrettyPrinting ()
-                    .setLenient ()
-                    .create ();
-
-            byte[] bytes = new byte[albumInputStream.available ()];
-            albumInputStream.read (bytes);
-
-            album = gson.fromJson (new String (bytes), Album.class);
-        } catch (Exception e) {
-            return null;
+            FloatArray(data[i].size) { j ->
+                (data[i][j] - min) / d
+            }
         }
 
-        wrappedAlbum = new AlbumWrapper (album, bitmap);
 
-        return wrappedAlbum;
+        return Scaler(
+            scaled,
+            min,
+            max
+        )
     }
 
-    public void album (Context context, String id) {
-        AlbumWrapper wrappedAlbum;
+    private fun invertMinMax(data: Scaler): Array<FloatArray> {
+        val delta = data.max - data.min
 
-        if ((wrappedAlbum = buildAlbumObject (context, id)) != null)
-            mAlbum.setValue (wrappedAlbum);//listener.onAlbum (wrappedAlbum);
+        var inverted = Array(data.result.size) { i ->
 
-        Executors.newSingleThreadExecutor ()
-                .execute (() -> {
-                    Album album = mSpotifyService.getValue ()
-                            .getAlbum (id);
+            FloatArray(data.result[i].size) { j ->
+                data.result[i][j] * delta + data.min
+            }
+        }
 
-                    Bitmap bitmap = BitmapTools.INSTANCE.from (album.images.get (0).url);
-
-                    AlbumWrapper wa = new AlbumWrapper (album, bitmap);
-
-                    cacheAlbumObject (context, wa);
-                });
+        return inverted
     }
 
-    public LiveData <AlbumWrapper> getAlbum () {
-        return mAlbum;
+    private data class Scaler(
+        var result: Array<FloatArray>,
+        var min: Float,
+        var max: Float,
+    )
+
+    private fun AudioFeaturesTrack.extractFeatures(): FloatArray {
+        val features = Array(featuresMap.size) { i ->
+            val f = featuresMap.filterValues { it == i }.keys.first()
+            AudioFeaturesTrack::class.java
+                .getField(f)
+                .get(this) as Float
+        }
+
+        return features.toFloatArray()
     }
 
-    public LiveData <TrackWrapper> getTrack () {
-        return mTrack;
+//    fun nextTrack2(context: Context) {
+//        val nextTrack = tracks.poll()
+//        if (nextTrack != null) {
+//            track.value = nextTrack
+//            val needsAlbum =
+//                mAlbum == null || mAlbum.value!!.album.id != track.value!!.track.album.id
+//            if (needsAlbum && AppRepo.getInstance()
+//                    .isAlbumCached(context, nextTrack.track.album.id)
+//            ) {
+//                album(context, nextTrack.track.album.id)
+//            }
+//            if (tracks.peek() != null) {
+//                nextTrack.setValue(tracks.peek())
+//            } else {
+//                needsNextTrack = true
+//                nextTrack.setValue(null)
+//            }
+//        } else {
+//            needsTrack = true
+//            track.setValue(null)
+//        }
+//        if (!isWaiting) {
+//            isWaiting = true
+//
+//            trackRepository.getNext()
+//
+//            AppRepo.getInstance()
+//                .getNextTrack(spotifyService.value, object : NextTrackListener {
+//                    override fun onGetTrack(trackWrapper: TrackWrapper) {
+//                        if (needsTrack) {
+//                            needsTrack = false
+//                            track.value = trackWrapper
+//                            if (AppRepo.getInstance()
+//                                    .isAlbumCached(context, trackWrapper.track.album.id)
+//                            ) {
+//                                album(context, trackWrapper.track.album.id)
+//                            }
+//                        } else {
+//                            tracks.add(trackWrapper)
+//                            if (needsNextTrack) {
+//                                needsNextTrack = false
+//                                nextTrack.value = trackWrapper
+//                            }
+//                        }
+//                        if (tracks.size <= 1) {
+//                            AppRepo.getInstance()
+//                                .getNextTrack(spotifyService.value, this)
+//                        } else {
+//                            isWaiting = false
+//                        }
+//                    }
+//                })
+//        }
+//    }
+//
+//    fun nextTrack(context: Context) {
+//        val nextTrack = tracks.poll()
+//        if (nextTrack != null) {
+//            track.value = nextTrack
+//            val needsAlbum =
+//                mAlbum == null || mAlbum.value!!.album.id != track.value!!.track.album.id
+//            if (needsAlbum && AppRepo.getInstance()
+//                    .isAlbumCached(context, nextTrack.track.album.id)
+//            ) {
+//                album(context, nextTrack.track.album.id)
+//            }
+//            if (tracks.peek() != null) {
+//                nextTrack.setValue(tracks.peek())
+//            } else {
+//                needsNextTrack = true
+//                nextTrack.setValue(null)
+//            }
+//        } else {
+//            needsTrack = true
+//            track.setValue(null)
+//        }
+//        if (!isWaiting) {
+//            isWaiting = true
+//            AppRepo.getInstance()
+//                .getNextTrack(spotifyService.value, object : NextTrackListener {
+//                    override fun onGetTrack(trackWrapper: TrackWrapper) {
+//                        if (needsTrack) {
+//                            needsTrack = false
+//                            track.value = trackWrapper
+//                            if (AppRepo.getInstance()
+//                                    .isAlbumCached(context, trackWrapper.track.album.id)
+//                            ) {
+//                                album(context, trackWrapper.track.album.id)
+//                            }
+//                        } else {
+//                            tracks.add(trackWrapper)
+//                            if (needsNextTrack) {
+//                                needsNextTrack = false
+//                                nextTrack.value = trackWrapper
+//                            }
+//                        }
+//                        if (tracks.size <= 1) {
+//                            AppRepo.getInstance()
+//                                .getNextTrack(spotifyService.value, this)
+//                        } else {
+//                            isWaiting = false
+//                        }
+//                    }
+//                })
+//        }
+//    }
+
+    fun album2(context: Context?, id: String?) {
+        AppRepo.getInstance()
+            .getAlbum(getSpotifyService().value, context, id, object : ResultListener() {
+                override fun onAlbum(albumWrapper: AlbumWrapper) {
+                    super.onAlbum(albumWrapper)
+                    Handler.createAsync(Looper.getMainLooper())
+                        .post { album!!.setValue(albumWrapper) }
+                }
+            })
     }
 
-    public void setTrack (TrackWrapper track) {
-        mTrack.setValue (track);
+    fun getTrack(): LiveData<TrackWrapper?> {
+        return track
     }
 
-    public LiveData <TrackWrapper> getNextTrack () {
-        return mNextTrack;
+    fun setTrack(track: TrackWrapper?) {
+        this.track.value = track
     }
 
-    public void setUser (UserWrapper userWrapper) {
-        mUser.setValue (userWrapper);
+    fun getNextTrack(): LiveData<TrackWrapper?> {
+        return nextTrack
     }
 
-    public LiveData <UserWrapper> getUser () {
-        return mUser;
+    fun setUser(userWrapper: UserWrapper) {
+        user.value = userWrapper
     }
 
-    public void setSpotifyService (SpotifyService spotifyService) {
-        mSpotifyService.setValue (spotifyService);
+    fun setSpotifyService(spotifyService: SpotifyService) {
+        this.spotifyService.value = spotifyService
     }
 
-    public LiveData <SpotifyService> getSpotifyService () {
-        return mSpotifyService;
+    fun getSpotifyService(): LiveData<SpotifyService> {
+        return spotifyService
     }
 
-    public void setSpotifyAppRemote (SpotifyAppRemote spotifyAppRemote) {
-        mSpotifyAppRemote.setValue (spotifyAppRemote);
+    fun setSpotifyAppRemote(spotifyAppRemote: SpotifyAppRemote) {
+        this.spotifyAppRemote.value = spotifyAppRemote
     }
 
-    public LiveData <SpotifyAppRemote> getSpotifyAppRemote () {
-        return mSpotifyAppRemote;
+    fun getSpotifyAppRemote(): LiveData<SpotifyAppRemote> {
+        return spotifyAppRemote
     }
 
-    public void setProgress (long progress) {
-        mProgress.setValue (progress);
+    fun setProgress(progress: Long) {
+        this.progress.value = progress
     }
 
-    public LiveData <Long> getProgress () {
-        return mProgress;
+    fun getProgress(): LiveData<Long> {
+        return progress
     }
 
-    public void play () {
-        PlayerApi playerApi = mSpotifyAppRemote.getValue ().getPlayerApi ();
-        Track track = mTrack.getValue ().track;
-        if (playerApi == null || track == null) return;
-
-        startPlayerStateListener ();
-
-        playerApi.getPlayerState ()
-                .setResultCallback (data -> {
-                    if (data.track.uri.equals (track.uri)) playerApi.resume ();
-                    else playerApi.play (track.uri);
-
-                    playerApi.setRepeat (Repeat.ONE);
-                });
+    fun play() {
+        val playerApi = spotifyAppRemote.value!!.playerApi
+        val track = track.value!!.track
+        if (playerApi == null || track == null) return
+        startPlayerStateListener()
+        playerApi.playerState
+            .setResultCallback { data: PlayerState ->
+                if (data.track.uri == track.uri) playerApi.resume() else playerApi.play(track.uri)
+                playerApi.setRepeat(Repeat.ONE)
+            }
     }
 
-    public void play (TrackWrapper wrappedTrack) {
-        PlayerApi playerApi = mSpotifyAppRemote.getValue ().getPlayerApi ();
-        Track track = wrappedTrack.track;
-        if (playerApi == null || track == null) return;
-
-        startPlayerStateListener ();
-
-        playerApi.play (track.uri);
+    fun play(wrappedTrack: TrackWrapper) {
+        val playerApi = spotifyAppRemote.value!!.playerApi
+        val track = wrappedTrack.track
+        if (playerApi == null || track == null) return
+        startPlayerStateListener()
+        playerApi.play(track.uri)
     }
 
-    public void pause () {
-        PlayerApi playerApi = mSpotifyAppRemote.getValue ().getPlayerApi ();
-
-        stopPlayerStateListener ();
-
-        if (playerApi == null) return;
-
-        playerApi.pause ();
+    fun pause() {
+        val playerApi = spotifyAppRemote.value!!.playerApi
+        stopPlayerStateListener()
+        if (playerApi == null) return
+        playerApi.pause()
     }
 
-    private void startPlayerStateListener () {
-        if (mPlayerStateListener == null)
-            mPlayerStateListener = Executors.newSingleThreadScheduledExecutor ();
-
-        mPlayerStateListener.scheduleAtFixedRate (() -> {
-            mSpotifyAppRemote.getValue ()
-                    .getPlayerApi ()
-                    .getPlayerState ()
-                    .setResultCallback (data -> {
-                        mProgress.setValue (data.playbackPosition);
-                    });
-        }, 0, 500, TimeUnit.MILLISECONDS);
+    private fun startPlayerStateListener() {
+        if (mPlayerStateListener == null) mPlayerStateListener =
+            Executors.newSingleThreadScheduledExecutor()
+        mPlayerStateListener!!.scheduleAtFixedRate({
+            spotifyAppRemote.value!!
+                .getPlayerApi()
+                .playerState
+                .setResultCallback { data: PlayerState -> progress.setValue(data.playbackPosition) }
+        }, 0, 500, TimeUnit.MILLISECONDS)
     }
 
-    private void stopPlayerStateListener () {
-        if (mPlayerStateListener == null) return;
-        mPlayerStateListener.shutdown ();
+    private fun stopPlayerStateListener() {
+        if (mPlayerStateListener == null) return
+        mPlayerStateListener!!.shutdown()
+    }
+
+    companion object {
+        private const val TAG = "ViewModel"
+
+        private fun cacheAlbumObject(context: Context, wrappedAlbum: AlbumWrapper) {
+            val album = wrappedAlbum.album
+            val bitmap = wrappedAlbum.bitmap
+            wrappedAlbum.album.available_markets = Arrays.asList("")
+            for (trackSimple in wrappedAlbum.album.tracks.items) {
+                trackSimple.available_markets = Arrays.asList("")
+            }
+            try {
+                val albumOutputStream =
+                    FileOutputStream(context.cacheDir.toString() + "/" + album.id + ".album")
+                val outputStream =
+                    FileOutputStream(context.cacheDir.toString() + "/" + album.id + ".jpeg")
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                outputStream.flush()
+                outputStream.close()
+                val gson = GsonBuilder()
+                    .setPrettyPrinting()
+                    .setLenient()
+                    .create()
+                val s = gson.toJson(album)
+                albumOutputStream.write(s.toByteArray(StandardCharsets.UTF_8))
+                albumOutputStream.flush()
+                albumOutputStream.close()
+            } catch (e: Exception) {
+            }
+        }
+
+        private fun buildAlbumObject(context: Context, id: String): AlbumWrapper? {
+            var wrappedAlbum: AlbumWrapper? = null
+            var album: Album? = null
+            var bitmap: Bitmap? = null
+            try {
+                val albumInputStream =
+                    FileInputStream(context.cacheDir.toString() + "/" + id + ".album")
+                val inputStream = FileInputStream(context.cacheDir.toString() + "/" + id + ".jpeg")
+                bitmap = BitmapFactory.decodeStream(inputStream)
+                val gson = GsonBuilder()
+                    .setPrettyPrinting()
+                    .setLenient()
+                    .create()
+                val bytes = ByteArray(albumInputStream.available())
+                albumInputStream.read(bytes)
+                album = gson.fromJson(String(bytes), Album::class.java)
+            } catch (e: Exception) {
+                return null
+            }
+            wrappedAlbum = AlbumWrapper(album, bitmap)
+            return wrappedAlbum
+        }
     }
 }

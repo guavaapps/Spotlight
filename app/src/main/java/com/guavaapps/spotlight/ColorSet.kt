@@ -27,7 +27,7 @@ class ColorSet {
             var swatch: Swatch?
             if (builder.generate().dominantSwatch.also { swatch = it } == null) {
                 // palette builder adds a lightness filter by default
-                // if bitmap too dark or light to have a dominant swatch clear the filter
+                // if bitmap too dark or light asRealmObject have a dominant swatch clear the filter
                 swatch = builder.clearFilters()
                     .generate()
                     .dominantSwatch

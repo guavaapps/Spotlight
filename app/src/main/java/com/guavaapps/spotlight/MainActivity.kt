@@ -17,7 +17,8 @@ import androidx.navigation.fragment.NavHostFragment
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.guavaapps.spotlight.AppRepo.ResultListener
-import com.pixel.spotifyapi.Objects.UserPrivate
+import com.guavaapps.spotlight.realm.RealmTrack
+import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyApi
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.ConnectionParams
@@ -26,17 +27,19 @@ import com.spotify.android.appremote.api.SpotifyAppRemote
 import com.spotify.sdk.android.auth.AuthorizationClient
 import com.spotify.sdk.android.auth.AuthorizationRequest
 import com.spotify.sdk.android.auth.AuthorizationResponse
+import retrofit.Callback
+import retrofit.RetrofitError
+import retrofit.client.Response
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private var spotifyService: SpotifyService? = null
     private val spotifyAppRemote: SpotifyAppRemote? = null
 
-    private val viewModel: ContentViewModel by viewModels ()
+    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
     private var lock: Any? = Any()
     private var fragmentContainerView: FragmentContainerView? = null
     private var contentFragment: ContentFragment? = null
-    private var playFragment: PlayFragment? = null
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,7 +49,6 @@ class MainActivity : AppCompatActivity() {
 
         fragmentContainerView = findViewById(R.id.fragment_container_view)
         contentFragment = ContentFragment()
-        playFragment = PlayFragment()
         val content = findViewById<View>(android.R.id.content)
         val fragment =
             supportFragmentManager.findFragmentById(R.id.fragment_container_view) as NavHostFragment?
@@ -90,7 +92,26 @@ class MainActivity : AppCompatActivity() {
                     val spotifyApi = SpotifyApi()
                     spotifyApi.setAccessToken(accessToken)
                     spotifyService = spotifyApi.service
-                    viewModel!!.setSpotifyService(spotifyService!!)
+                    viewModel.spotifyService.value = spotifyService!!
+
+//                    viewModel.initForUser(
+//                        this,
+//                        spotifyService!!
+//                    )
+
+                    LocalRealm.test()
+
+                    spotifyService!!.getRecommendations(mapOf(), object :
+                        Callback<Recommendations> {
+                        override fun success(t: Recommendations?, response: Response?) {
+
+                        }
+
+                        override fun failure(error: RetrofitError?) {
+
+                        }
+
+                    })
 
 //                    mViewModel.getRecc ();
                     AppRepo.getInstance()
@@ -155,7 +176,7 @@ class MainActivity : AppCompatActivity() {
                     object : Connector.ConnectionListener {
                         override fun onConnected(spotifyAppRemote: SpotifyAppRemote) {
                             Log.d(TAG, "SpotifyAppRemote connected")
-                            viewModel!!.setSpotifyAppRemote(spotifyAppRemote)
+                            viewModel!!.spotifyAppRemote.value = spotifyAppRemote
                         }
 
                         override fun onFailure(error: Throwable) {

@@ -19,6 +19,7 @@ import androidx.core.view.*
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.NavController
 import androidx.navigation.fragment.FragmentNavigatorExtras
@@ -27,8 +28,8 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
 
-class ContentFragment : Fragment() {
-    private var mViewModel: ContentViewModel? = null
+class ContentFragment : Fragment () {
+    private val mViewModel: ContentViewModel by viewModels ()
 
     private var mPager: ViewPager2? = null
     private var track: FragmentContainerView? = null
@@ -59,8 +60,6 @@ class ContentFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        mViewModel = ViewModelProvider(requireActivity()).get(ContentViewModel::class.java)
 
         mNavController = NavHostFragment.findNavController(this)
 
@@ -102,7 +101,7 @@ class ContentFragment : Fragment() {
         mSurfaceView!!.scaleType = ImageView.ScaleType.CENTER_CROP
         mTempSurfaceView!!.scaleType = ImageView.ScaleType.CENTER_CROP
 
-        mViewModel!!.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
+        mViewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
             if (albumWrapper != null) {
                 nextAlbum(albumWrapper)
             } else {

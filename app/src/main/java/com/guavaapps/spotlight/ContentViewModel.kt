@@ -5,17 +5,20 @@ import com.guavaapps.components.bitmap.BitmapTools.from
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.SpotifyAppRemote
 import android.os.Looper
-import com.guavaapps.spotlight.AppRepo.ResultListener
 import android.graphics.Bitmap
 import com.spotify.protocol.types.PlayerState
 import com.spotify.protocol.types.Repeat
 import com.google.gson.GsonBuilder
 import android.graphics.BitmapFactory
-import android.os.Handler
 import android.util.Log
+import androidx.core.os.HandlerCompat
 import androidx.lifecycle.*
-import com.guavaapps.spotlight.realm.Track
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewmodel.CreationExtras
+import com.guavaapps.spotlight.realm.RealmAlbumWrapper
+import com.guavaapps.spotlight.realm.RealmTrack
 import com.guavaapps.spotlight.realm.TrackModel
+import com.guavaapps.spotlight.realm.User
 import com.pixel.spotifyapi.Objects.*
 import io.realm.Realm
 import io.realm.RealmList
@@ -31,25 +34,27 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
-class ContentViewModel(
-    private val app: Ky,
-) : ViewModel() {
+class ContentViewModel : ViewModel() {
+    private val executor = Executors.newSingleThreadExecutor()
+    private val uiHandler = HandlerCompat.createAsync(Looper.getMainLooper())
+
     lateinit var userRepository: UserRepository
     lateinit var mongoClient: MongoClient
     lateinit var modelRepository: ModelRepository
     lateinit var localRealm: LocalRealm
+    lateinit var realm: Realm
 
     private var isWaiting = false
     private var needsTrack = true
     private var needsNextTrack = true
     private val tracks: Queue<TrackWrapper?> = LinkedList()
-    private val spotifyService = MutableLiveData<SpotifyService>()
-    private val spotifyAppRemote = MutableLiveData<SpotifyAppRemote>()
-    private val user = MutableLiveData<UserWrapper>()
-    private val track = MutableLiveData<TrackWrapper?>()
-    private val progress = MutableLiveData<Long>()
-    private val nextTrack = MutableLiveData<TrackWrapper?>()
-    private val album: MutableLiveData<AlbumWrapper?> = MutableLiveData()
+    val spotifyService = MutableLiveData<SpotifyService>()
+    val spotifyAppRemote = MutableLiveData<SpotifyAppRemote>()
+    val user = MutableLiveData<UserWrapper>()
+    val track = MutableLiveData<TrackWrapper?>()
+    val progress = MutableLiveData<Long>()
+    val nextTrack = MutableLiveData<TrackWrapper?>()
+    val album: MutableLiveData<AlbumWrapper?> = MutableLiveData()
     private var mPlayerStateListener: ScheduledExecutorService? = null
 
     private var featuresMap = mapOf(
@@ -71,28 +76,58 @@ class ContentViewModel(
 
     private var localTimeline = mutableListOf<FloatArray>()
 
-    fun initForUser(context: Context, userId: String, reset: Boolean = true) {
-        logOutUser()
+    fun initForUser(
+        context: Context,
+        service: SpotifyService,
+    ) {
+        spotifyService.value = service
 
-        mongoClient = MongoClient(context)
+        if (user.value != null) {
+            logOutUser()
+        }
 
-        val remoteModelDataSource = RemoteModelDataSource()
+        spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
+            override fun success(t: UserPrivate?, response: Response?) {
+                executor.execute {
+                    val bitmap = from(t!!.images[0].url)
 
-        modelRepository = ModelRepository(
-            userId,
-            mongoClient,
-            remoteModelDataSource
-        )
+                    val userId = t.id
 
-        userRepository = UserRepository(
-            userId,
-            mongoClient
-        )
+                    mongoClient = MongoClient(context)
 
-        localRealm = LocalRealm(context)
+                    val remoteModelDataSource = RemoteModelDataSource()
 
-        getUser()
-        getNext()
+                    modelRepository = ModelRepository(
+                        userId,
+                        mongoClient,
+                        remoteModelDataSource
+                    )
+
+                    userRepository = UserRepository(
+                        userId,
+                        mongoClient
+                    )
+
+                    localRealm = LocalRealm(context)
+
+                    localTimeline = getTimeline()
+
+                    uiHandler.post {
+                        user.value = UserWrapper(
+                            t,
+                            bitmap
+                        )
+
+                        getNext()
+                    }
+                }
+            }
+
+            override fun failure(error: RetrofitError?) {
+
+            }
+
+        })
     }
 
     fun logOutUser() {
@@ -108,7 +143,7 @@ class ContentViewModel(
         userRepository.update(user)
     }
 
-    fun getUser() {
+    fun getUserAsync() {
         spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
             override fun success(t: UserPrivate?, response: Response?) {
                 user.value = UserWrapper(
@@ -136,6 +171,13 @@ class ContentViewModel(
         }
     }
 
+    private fun getTimeline(): MutableList<FloatArray> {
+        return userRepository.get()
+            .timeline
+            .map { it.features.toFloatArray() }
+            .toMutableList()
+    }
+
     private fun createParamsObject(features: FloatArray): Map<String, Any> {
         var map = mutableMapOf<String, Any>(
             "genre_seed" to "hip_hop"
@@ -152,7 +194,7 @@ class ContentViewModel(
 
     private var hasRetried = false
 
-    fun getAlbum() {
+    fun loadAlbum() {
         spotifyService.value!!.getAlbum(track.value!!.track.album.id,
             object : Callback<Album> {
                 override fun success(t: Album?, response: Response?) {
@@ -180,7 +222,7 @@ class ContentViewModel(
                 album == null || album.value!!.album.id != track.value!!.track.album.id
 
             val album = localRealm.get(
-                com.guavaapps.spotlight.realm.AlbumWrapper::class.java,
+                RealmAlbumWrapper::class.java,
                 track.value!!.track.album.id
             )
 
@@ -248,7 +290,7 @@ class ContentViewModel(
         }
     }
 
-    fun logSuccess(tracks: Array<Track>) {
+    fun logSuccess(tracks: Array<RealmTrack>) {
         val ids = tracks.map { it.id }
 
         spotifyService.value!!.getTracksAudioFeatures(
@@ -321,164 +363,6 @@ class ContentViewModel(
         }
 
         return features.toFloatArray()
-    }
-
-//    fun nextTrack2(context: Context) {
-//        val nextTrack = tracks.poll()
-//        if (nextTrack != null) {
-//            track.value = nextTrack
-//            val needsAlbum =
-//                mAlbum == null || mAlbum.value!!.album.id != track.value!!.track.album.id
-//            if (needsAlbum && AppRepo.getInstance()
-//                    .isAlbumCached(context, nextTrack.track.album.id)
-//            ) {
-//                album(context, nextTrack.track.album.id)
-//            }
-//            if (tracks.peek() != null) {
-//                nextTrack.setValue(tracks.peek())
-//            } else {
-//                needsNextTrack = true
-//                nextTrack.setValue(null)
-//            }
-//        } else {
-//            needsTrack = true
-//            track.setValue(null)
-//        }
-//        if (!isWaiting) {
-//            isWaiting = true
-//
-//            trackRepository.getNext()
-//
-//            AppRepo.getInstance()
-//                .getNextTrack(spotifyService.value, object : NextTrackListener {
-//                    override fun onGetTrack(trackWrapper: TrackWrapper) {
-//                        if (needsTrack) {
-//                            needsTrack = false
-//                            track.value = trackWrapper
-//                            if (AppRepo.getInstance()
-//                                    .isAlbumCached(context, trackWrapper.track.album.id)
-//                            ) {
-//                                album(context, trackWrapper.track.album.id)
-//                            }
-//                        } else {
-//                            tracks.add(trackWrapper)
-//                            if (needsNextTrack) {
-//                                needsNextTrack = false
-//                                nextTrack.value = trackWrapper
-//                            }
-//                        }
-//                        if (tracks.size <= 1) {
-//                            AppRepo.getInstance()
-//                                .getNextTrack(spotifyService.value, this)
-//                        } else {
-//                            isWaiting = false
-//                        }
-//                    }
-//                })
-//        }
-//    }
-//
-//    fun nextTrack(context: Context) {
-//        val nextTrack = tracks.poll()
-//        if (nextTrack != null) {
-//            track.value = nextTrack
-//            val needsAlbum =
-//                mAlbum == null || mAlbum.value!!.album.id != track.value!!.track.album.id
-//            if (needsAlbum && AppRepo.getInstance()
-//                    .isAlbumCached(context, nextTrack.track.album.id)
-//            ) {
-//                album(context, nextTrack.track.album.id)
-//            }
-//            if (tracks.peek() != null) {
-//                nextTrack.setValue(tracks.peek())
-//            } else {
-//                needsNextTrack = true
-//                nextTrack.setValue(null)
-//            }
-//        } else {
-//            needsTrack = true
-//            track.setValue(null)
-//        }
-//        if (!isWaiting) {
-//            isWaiting = true
-//            AppRepo.getInstance()
-//                .getNextTrack(spotifyService.value, object : NextTrackListener {
-//                    override fun onGetTrack(trackWrapper: TrackWrapper) {
-//                        if (needsTrack) {
-//                            needsTrack = false
-//                            track.value = trackWrapper
-//                            if (AppRepo.getInstance()
-//                                    .isAlbumCached(context, trackWrapper.track.album.id)
-//                            ) {
-//                                album(context, trackWrapper.track.album.id)
-//                            }
-//                        } else {
-//                            tracks.add(trackWrapper)
-//                            if (needsNextTrack) {
-//                                needsNextTrack = false
-//                                nextTrack.value = trackWrapper
-//                            }
-//                        }
-//                        if (tracks.size <= 1) {
-//                            AppRepo.getInstance()
-//                                .getNextTrack(spotifyService.value, this)
-//                        } else {
-//                            isWaiting = false
-//                        }
-//                    }
-//                })
-//        }
-//    }
-
-    fun album2(context: Context?, id: String?) {
-        AppRepo.getInstance()
-            .getAlbum(getSpotifyService().value, context, id, object : ResultListener() {
-                override fun onAlbum(albumWrapper: AlbumWrapper) {
-                    super.onAlbum(albumWrapper)
-                    Handler.createAsync(Looper.getMainLooper())
-                        .post { album!!.setValue(albumWrapper) }
-                }
-            })
-    }
-
-    fun getTrack(): LiveData<TrackWrapper?> {
-        return track
-    }
-
-    fun setTrack(track: TrackWrapper?) {
-        this.track.value = track
-    }
-
-    fun getNextTrack(): LiveData<TrackWrapper?> {
-        return nextTrack
-    }
-
-    fun setUser(userWrapper: UserWrapper) {
-        user.value = userWrapper
-    }
-
-    fun setSpotifyService(spotifyService: SpotifyService) {
-        this.spotifyService.value = spotifyService
-    }
-
-    fun getSpotifyService(): LiveData<SpotifyService> {
-        return spotifyService
-    }
-
-    fun setSpotifyAppRemote(spotifyAppRemote: SpotifyAppRemote) {
-        this.spotifyAppRemote.value = spotifyAppRemote
-    }
-
-    fun getSpotifyAppRemote(): LiveData<SpotifyAppRemote> {
-        return spotifyAppRemote
-    }
-
-    fun setProgress(progress: Long) {
-        this.progress.value = progress
-    }
-
-    fun getProgress(): LiveData<Long> {
-        return progress
     }
 
     fun play() {
@@ -575,6 +459,14 @@ class ContentViewModel(
             }
             wrappedAlbum = AlbumWrapper(album, bitmap)
             return wrappedAlbum
+        }
+
+        val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                val app = extras[APPLICATION_KEY]
+
+                return ContentViewModel() as T
+            }
         }
     }
 }

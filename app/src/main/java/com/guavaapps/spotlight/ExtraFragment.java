@@ -97,7 +97,7 @@ public class ExtraFragment extends Fragment {
                         @Override
                         public void success (Track track, Response response) {
                             TrackWrapper wrappedTrack = new TrackWrapper (track, mViewModel.getAlbum ().getValue ().bitmap);
-                            mViewModel.setTrack (wrappedTrack);
+                            mViewModel.getTrack ().setValue (wrappedTrack);
 
                             mViewModel.getSpotifyAppRemote ().getValue ()
                                     .getPlayerApi ()
@@ -160,7 +160,7 @@ public class ExtraFragment extends Fragment {
             }
         });
 
-        mViewModel.getAlbum ().observe (getViewLifecycleOwner (), albumWrapper -> {
+        mViewModel.getAlbum().observe (getViewLifecycleOwner (), albumWrapper -> {
             if (albumWrapper != null) {
                 mAlbum = albumWrapper;
                 nextAlbum (albumWrapper);

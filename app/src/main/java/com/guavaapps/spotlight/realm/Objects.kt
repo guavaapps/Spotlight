@@ -1,16 +1,11 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
-import com.pixel.spotifyapi.Objects.AlbumSimple
-import com.pixel.spotifyapi.Objects.Copyright
-import com.pixel.spotifyapi.Objects.LinkedTrack
-import io.realm.Realm
-import io.realm.RealmDictionary
-import io.realm.RealmList
-import io.realm.RealmObject
+import io.realm.*
 import io.realm.annotations.PrimaryKey
 import io.realm.annotations.Required
 import org.bson.types.ObjectId
+import java.nio.ByteBuffer
 import java.util.*
 
 open class User(
@@ -52,7 +47,7 @@ open class ModelParam(
     var shapes: RealmList<Int> = RealmList()
 }
 
-open class Track(
+open class RealmTrack(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     @Required
@@ -69,15 +64,15 @@ open class Track(
     var disc_number: Int? = null
     var available_markets = RealmList<String>()
     var external_urls = RealmDictionary<String>()
-    var linked_from: LinkedTrack? = null
-    var artists = RealmList<Artist>()
+    var linked_from: RealmLinkedTrack? = null
+    var artists = RealmList<RealmArtistSimple>()
 
-    var album: AlbumSimple? = null
+    var album: RealmAlbumSimple? = null
     var external_ids = RealmDictionary<String>()
     var popularity: Int? = null
 }
 
-open class TrackSimple(
+open class RealmTrackSimple(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     @Required
@@ -94,68 +89,105 @@ open class TrackSimple(
     var disc_number: Int? = null
     var available_markets = RealmList<String>()
     var external_urls = RealmDictionary<String>()
-    var linked_from: LinkedTrack? = null
-    var artists = RealmList<Artist>()
+    var linked_from: RealmLinkedTrack? = null
+    var artists = RealmList<RealmArtist>()
 }
 
-open class AlbumSimple(var _id: ObjectId = ObjectId()) : RealmObject() {
+open class RealmAlbumSimple(var _id: ObjectId = ObjectId()) : RealmObject() {
     var album_type: String? = null
-    var available_markets: List<String>? = null
-    var external_urls: Map<String, String>? = null
+    var available_markets: RealmList<String>? = null
+    var external_urls: RealmDictionary<String>? = null
     var href: String? = null
     var id: String? = null
-    var images: List<Image>? = null
+    var images: RealmList<RealmImage>? = null
     var name: String? = null
     var type: String? = null
     var uri: String? = null
 }
 
-open class Album(
+open class RealmBitmap(
+    var _id: ObjectId = ObjectId(),
+) : RealmObject() {
+    var bytes: ByteArray? = null
+    var width: Int? = null
+    var height: Int? = null
+    var config: String? = null
+}
+
+fun toRealmBitmap(bitmap: Bitmap) {
+    val b = ByteBuffer.allocate(bitmap.rowBytes * bitmap.height)
+    bitmap.copyPixelsToBuffer(b)
+
+    val realmBitmap = RealmBitmap().apply {
+        bytes = b.array()
+        width = bitmap.width
+        height = bitmap.height
+        config = bitmap.config.name
+    }
+}
+
+fun ky(realmBitmap: RealmBitmap) {
+    val bitmap = Bitmap.createBitmap(
+        realmBitmap.width!!,
+        realmBitmap.height!!,
+        Bitmap.Config.valueOf(realmBitmap.config!!)
+    )
+
+    bitmap.copyPixelsToBuffer(
+        ByteBuffer.wrap(realmBitmap.bytes)
+    )
+}
+
+open class RealmAlbum(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     var album_type: String? = null
-    var available_markets: List<String>? = null
-    var external_urls: Map<String, String>? = null
+    var available_markets: RealmList<String>? = null
+    var external_urls: RealmDictionary<String>? = null
     var href: String? = null
     var id: String? = null
-    var images: List<Image>? = null
+    var images: RealmList<RealmImage>? = null
     var name: String? = null
     var type: String? = null
     var uri: String? = null
 
-    var artists: RealmList<ArtistSimple> = RealmList()
-    var copyrights: RealmList<Copyright>? = null
+    var artists: RealmList<RealmArtistSimple> = RealmList()
+    var copyrights: RealmList<RealmCopyright>? = null
     var external_ids: RealmDictionary<String>? = null
     var genres: RealmList<String>? = null
     var popularity: Int? = null
     var release_date: String? = null
     var release_date_precision: String? = null
-    var tracks: Pager<TrackSimple>? = null
+    var tracks: RealmPager? = null
 }
 
-open class Copyright(
+
+open class RealmCopyright(
     var _id: ObjectId = ObjectId(),
-): RealmObject () {
-
+) : RealmObject() {
+    var text: String? = null
+    var type: String? = null
 }
 
-open class Artist(
+open class RealmArtist(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     var external_urls = RealmDictionary<String>()
     var href: String? = null
+    @Required
+    @PrimaryKey
     var id: String? = null
     var name: String? = null
     var type: String? = null
     var uri: String? = null
 
-    var followers: Followers? = null
+    var followers: RealmFollowers? = null
     var genres = RealmList<String>()
-    var images = RealmList<Image>()
+    var images = RealmList<RealmImage>()
     var popularity: Int? = null
 }
 
-open class ArtistSimple(var _id: ObjectId = ObjectId()) : RealmObject() {
+open class RealmArtistSimple(var _id: ObjectId = ObjectId()) : RealmObject() {
     var external_urls = RealmDictionary<String>()
     var href: String? = null
     var id: String? = null
@@ -164,14 +196,14 @@ open class ArtistSimple(var _id: ObjectId = ObjectId()) : RealmObject() {
     var uri: String? = null
 }
 
-open class Followers(
+open class RealmFollowers(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     var href: String? = null
     var total: Int? = null
 }
 
-open class Image(
+open class RealmImage(
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     var width: Int? = null
@@ -179,11 +211,12 @@ open class Image(
     var url: String? = null
 }
 
-open class Pager<T : RealmObject>(
+open class RealmPager(
+    @PrimaryKey
     var _id: ObjectId = ObjectId(),
 ) : RealmObject() {
     var href: String? = null
-    var items: List<T>? = null
+    var items: RealmList<RealmAny> = RealmList()
     var limit = 0
     var next: String? = null
     var offset = 0
@@ -191,26 +224,27 @@ open class Pager<T : RealmObject>(
     var total = 0
 }
 
-open class TrackWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
-    var track: Track? = null
-    var bitmap: Bitmap? = null
+open class RealmTrackWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
+    var track: RealmTrack? = null
+    var bitmap: RealmBitmap? = null
 }
 
-open class AlbumWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
-    var album: Track? = null
-    var bitmap: Bitmap? = null
+open class RealmAlbumWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
+    var album: RealmTrack? = null
+    var bitmap: RealmBitmap? = null
 }
 
-open class ArtistWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
-    var artist: Artist? = null
-    var bitmap: Bitmap? = null
+open class RealmArtistWrapper(var _id: ObjectId = ObjectId()) : RealmObject() {
+    var artist: RealmArtist? = null
+    var bitmap: RealmBitmap? = null
 }
 
-open class LinkedTrack(var _id: ObjectId = ObjectId()) : RealmObject() {
-    var external_urls: Map<String, String>? = null
+open class RealmLinkedTrack(var _id: ObjectId = ObjectId()) : RealmObject() {
+    var external_urls: RealmDictionary<String>? = null
     var href: String? = null
     var type: String? = null
     var uri: String? = null
+    var id: String? = null
 }
 
 open class TrackModel(
@@ -221,54 +255,4 @@ open class TrackModel(
     var track_id: String? = null
     var features: RealmList<Float> = RealmList()
     var timestamp: Long? = null
-}
-
-fun a() {
-    val rObject = TrackWrapper() realmifyAs Track::class.java
-}
-
-val typeMap = mapOf(
-    com.guavaapps.spotlight.TrackWrapper::class.java to TrackWrapper::class.java,
-    com.guavaapps.spotlight.AlbumWrapper::class.java to AlbumWrapper::class.java,
-    com.guavaapps.spotlight.ArtistWrapper::class.java to ArtistWrapper::class.java,
-
-    com.pixel.spotifyapi.Objects.Track::class.java to Track::class.java,
-    com.pixel.spotifyapi.Objects.Album::class.java to Album::class.java,
-    com.pixel.spotifyapi.Objects.Artist::class.java to Artist::class.java,
-
-    com.pixel.spotifyapi.Objects.TrackSimple::class.java to TrackSimple::class.java,
-    com.pixel.spotifyapi.Objects.AlbumSimple::class.java to com.guavaapps.spotlight.realm.AlbumSimple::class.java,
-    com.pixel.spotifyapi.Objects.ArtistSimple::class.java to ArtistSimple::class.java,
-
-    com.pixel.spotifyapi.Objects.Followers::class.java to Followers::class.java,
-    com.pixel.spotifyapi.Objects.Image::class.java to Image::class.java,
-    LinkedTrack::class.java to com.guavaapps.spotlight.realm.LinkedTrack::class.java,
-    com.pixel.spotifyapi.Objects.Pager::class.java to Pager::class.java,
-
-    List::class.java to RealmList::class.java
-)
-
-inline infix fun <reified E, T : RealmObject> E.realmifyAs(clazz: Class<T>): T {
-    val instance = clazz.getConstructor(ObjectId::class.java)
-        .newInstance(ObjectId())
-
-    val objClass = E::class.java
-
-    for (field in clazz.fields) {
-        val f = objClass.getDeclaredField(field.name)
-        val v = f.get(this)
-
-        if (field.type.isPrimitive) {
-            field.set(field.name, v)
-        } else {
-            val c = typeMap[objClass]
-//            field.set(field.name, v as c )
-        }
-    }
-
-    return instance
-}
-
-infix fun <E : RealmObject, T> E.derealmifyTo(clazz: Class<T>): T {
-    return Any() as T
 }

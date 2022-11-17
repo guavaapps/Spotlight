@@ -4,13 +4,10 @@ import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
-import com.guavaapps.components.bitmap.BitmapTools
-import com.guavaapps.spotlight.realm.ArtistWrapper
-import com.guavaapps.spotlight.realm.Model
-import com.guavaapps.spotlight.realm.SpotifyObject
-import com.guavaapps.spotlight.realm.Track
-import com.guavaapps.spotlight.realm.User
+import com.guavaapps.spotlight.realm.*
+import com.pixel.spotifyapi.Objects.*
 import io.realm.*
+import io.realm.annotations.RealmClass
 import io.realm.mongodb.App
 import io.realm.mongodb.AppConfiguration
 import io.realm.mongodb.Credentials
@@ -21,23 +18,14 @@ import org.tensorflow.lite.Interpreter
 import retrofit.http.Body
 import retrofit.http.POST
 import java.io.File
+import java.lang.Exception
+import java.lang.reflect.Type
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.*
+import java.security.spec.ECField
 import java.lang.Class as Class
 
 private const val TAG = "Service"
-
-interface LambdaService {
-    @POST("/")
-    fun getModel(@Body data: String): Any
-}
-
-class LambdaModel {
-    var model: String? = null
-    var weights: FloatArray? = null
-    var states: FloatArray? = null
-}
 
 class DLSTMPModel(model: File) {
     private val LOOK_BACK = 1
@@ -46,26 +34,6 @@ class DLSTMPModel(model: File) {
 
     init {
         interpreter = Interpreter(model)
-    }
-
-    fun getNextTest(): FloatArray {
-        // create a 4-timestep, 2-feature timeline and run on test model
-
-        val testTimeline = Array(4) { FloatArray(2) }
-
-        return getNext(testTimeline)
-    }
-
-    fun testOn5(): FloatArray {
-        val testTimeline = arrayOf(
-            floatArrayOf(0.15f, 0.7f),
-            floatArrayOf(0.15f, 0.7f),
-            floatArrayOf(0.05f, 0.6f),
-            floatArrayOf(0.05f, 0.5f),
-            floatArrayOf(0.05f, 0.45f),
-        )
-
-        return getNext(testTimeline)
     }
 
     fun getNext(timeline: Array<FloatArray>): FloatArray {
@@ -119,18 +87,6 @@ class DLSTMPModel(model: File) {
         )
     }
 
-    private fun createBatches(timeline: FloatArray): Array<FloatArray> {
-//        val scaled = scaleMinMax(timeline)
-        var batches = mutableListOf<FloatArray>()
-
-        for (i in 0..timeline.size - LOOK_BACK - 1) {
-            val a = timeline.slice(i..i + LOOK_BACK - 1).toFloatArray()
-            batches.add(a)
-        }
-
-        return batches.toTypedArray()
-    }
-
     private fun scaleMinMax(data: Array<FloatArray>): Scaler {
         var min = Float.MIN_VALUE
         var max = Float.MAX_VALUE
@@ -175,13 +131,13 @@ class DLSTMPModel(model: File) {
     private data class Scaler(
         var result: Array<FloatArray>,
         var min: Float,
-        var max: Float
+        var max: Float,
     )
 }
 
 class UserRepository(
     private val userId: String,
-    mongoClient: MongoClient
+    mongoClient: MongoClient,
 ) {
     private var realm: Realm
 
@@ -210,7 +166,7 @@ class UserRepository(
 class ModelRepository(
     private val userId: String,
     mongoClient: MongoClient,
-    private val remoteModelDataSource: RemoteModelDataSource
+    private val remoteModelDataSource: RemoteModelDataSource,
 ) {
     var model: DLSTMPModel
         private set
@@ -235,6 +191,8 @@ class LocalRealm(context: Context) {
     private val realm: Realm
 
     init {
+        Realm.init(context)
+
         val config = RealmConfiguration.Builder()
             .name("Spotlight")
             .build()
@@ -242,30 +200,268 @@ class LocalRealm(context: Context) {
         realm = Realm.getInstance(config)
     }
 
-    fun <E : SpotifyObject> get(clazz: Class<E>, id: String): E? {
-        return realm.where(clazz)
+    fun <E : RealmObject> get(
+        clazz: Class<E>,
+        id: String,
+        derealm: (r: E?) -> Any? = { it as E },
+    ): Any? {
+        val realmObject = realm.where(clazz)
             .equalTo("id", id)
             .findFirst()
+
+        return derealm(realmObject)
     }
 
-    fun <E : SpotifyObject> put(obj: E) {
+    fun <E> put(obj: E, realmifier: (o: E) -> RealmObject = { obj as RealmObject }) {
         realm.executeTransaction {
-            it.where(obj::class.java)
-                .equalTo("id", obj.id)
-                .findAll()
+            val realmObject = realmifier(obj)
 
-            it.insert(obj)
+            val id = obj!!::class.java.getField("id").get(obj) as String
+
+            it.where(realmObject::class.java)
+                .equalTo("id", id)
+                .findAll()
+                .removeFirst()
+
+            it.insert(realmObject)
         }
     }
+
+    fun testPut () {
+        val obj = Track ()
+
+        put(obj) {o -> o.realmify(supportedRealmTypes.first { it.simpleName == "Realm${o::class.java.simpleName}" }) }
+    }
+
+    fun <E> Any.mapTo(clazz: Class<E>, supportedTypes: List<Class<*>>) {
+        val c = this::class.java
+        val obj = clazz.newInstance()
+
+        c.fields.forEach {
+            val v = it.get(this)
+
+            if (it.type.isPrimitive) {
+                clazz.getField(it.name).set(obj, v)
+            } else {
+                clazz.getField(it.name).set(obj,
+                    v.realmify(
+                        supportedTypes.first { clazz -> clazz.name == "Realm${c.name}" }
+                    )
+                )
+            }
+        }
+    }
+
+    companion object {
+        fun test() {
+            val track = Track().apply {
+                id = "fksdjflksdj"
+                name = "track_name"
+                linked_from = LinkedTrack().apply {
+                    id = ""
+                    href = ""
+                    type = ""
+                    uri = ""
+                    external_urls = mutableMapOf("" to "")
+                }
+                artists = listOf(
+                    ArtistSimple().apply {
+                        name = "artist_1"
+                    },
+                    ArtistSimple().apply {
+                        name = "artist_2"
+                    }
+                )
+            }
+
+            val realmTrack = track.realmify(RealmTrack::class.java)
+
+            for (f in realmTrack::class.java.fields) {
+                Log.e(TAG, "${f.name}=${f.get(realmTrack)}")
+            }
+        }
+    }
+
+//    fun <E> Any.realmify(realmClass: Class<E>) {
+//        val c = this::class.java
+//        val obj = realmClass.newInstance()
+//
+//        c.fields.forEach {
+//            val v = it.get(this)
+//
+//            if (it.type.isPrimitive) {
+//                realmClass.getField(it.name).set(obj, v)
+//            } else if (Collection::class.java.isAssignableFrom(it.type)) {
+//                // is list
+//                if (List::class.java.isAssignableFrom(it.type)) {
+//                    realmClass.getField(it.name).set(obj, RealmList(*(v as Array<*>)))
+//                }
+//                // is map
+//                else if (Map::class.java.isAssignableFrom(it.type)) {
+//                    realmClass.getField(it.name).set(obj, RealmDictionary(v as Map<String, *>))
+//                } else {
+//                    throw IllegalArgumentException("unsupported collection type - ${it.name}")
+//                }
+//            } else {
+//                realmClass.getField(it.name).set(obj,
+//                    v.realmify(
+//                        supportedRealmTypes.first { clazz -> clazz.name == "Realm${c.name}" }
+//                    )
+//                )
+//            }
+//        }
+//    }
+//
+//    fun <E> Any.dickdock(clazz: Class<E>) {
+//        val c = this::class.java
+//        val obj = clazz.newInstance()
+//
+//        c.fields.forEach {
+//            val v = it.get(this)
+//
+//            if (it.type.isPrimitive) {
+//                clazz.getField(it.name).set(obj, v)
+//            } else {
+//                clazz.getField(it.name).set(obj,
+//                    v.realmify(
+//                        supportedTypes.first { cl -> cl.name == c.name.removePrefix("Realm") }
+//                    )
+//                )
+//            }
+//        }
+//    }
+
+    val supportedRealmTypes = listOf(
+        RealmTrack::class.java,
+        RealmTrackSimple::class.java,
+        RealmAlbumSimple::class.java,
+        RealmArtistSimple::class.java,
+        RealmArtist::class.java,
+        RealmAlbum::class.java,
+        RealmLinkedTrack::class.java,
+        RealmImage::class.java,
+        RealmPager::class.java,
+        RealmCopyright::class.java,
+        RealmFollowers::class.java
+    )
+
+    val supportedTypes = listOf(
+        Track::class.java,
+        TrackSimple::class.java,
+        AlbumSimple::class.java,
+        ArtistSimple::class.java,
+        Artist::class.java,
+        Album::class.java,
+        LinkedTrack::class.java,
+        Image::class.java,
+        Pager::class.java,
+        Copyright::class.java,
+        Followers::class.java
+    )
+
+    fun testPutTrack() {
+        val track = Track()
+        val album = Album()
+
+        put(track, this::realmifyTrack)
+
+        val a = get(RealmTrack::class.java, track.id)// { it as Track }
+    }
+
+    private fun drealm(r: RealmTrack?): Track? {
+        r ?: return null
+
+        return Track().apply {
+            id = r?.id
+        }
+    }
+
+    private fun realmifyTrack(track: Track) = RealmTrack().apply {
+        id = track.id
+        name = track.name
+    }
+
+    fun d() {
+        put(Track())
+
+    }
+}
+
+val supportedRealmTypes = listOf(
+    RealmTrack::class.java,
+    RealmTrackSimple::class.java,
+    RealmAlbumSimple::class.java,
+    RealmArtistSimple::class.java,
+    RealmArtist::class.java,
+    RealmAlbum::class.java,
+    RealmLinkedTrack::class.java,
+    RealmImage::class.java,
+    RealmPager::class.java,
+    RealmCopyright::class.java,
+    RealmFollowers::class.java
+)
+
+fun <E> Any.realmify(realmClass: Class<E>): E {
+    val c = this::class.java
+    val obj = realmClass.newInstance()
+
+    c.fields.forEach {
+        if (it.name == "CREATOR") return@forEach
+
+        val v = it.get(this) ?: return@forEach
+
+        Log.e(TAG, "${it.name} - isPrimitive=${it.type.isPrimitive}")
+
+        val r = realmClass.getDeclaredField(it.name)
+        r.isAccessible = true
+
+        if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type)) {
+            Log.e(TAG, "primitive or string")
+
+            r.set(obj, v)
+        } else if (List::class.java.isAssignableFrom(it.type)) {
+            Log.e(TAG, "list")
+
+            r.apply {
+                isAccessible = true
+                set(obj, RealmList(*(v as MutableList<*>).toTypedArray()))
+            }
+        }
+        // is map
+        else if (Map::class.java.isAssignableFrom(it.type)) {
+            Log.e(TAG, "map")
+            r.set(obj, RealmDictionary(v as Map<String, *>))
+        } else {
+            Log.e(TAG, "realmifiable")
+
+            val f = if (it in c.declaredFields) {
+                c.getDeclaredField(it.name)
+            }
+            else {
+                c.superclass.getDeclaredField(it.name)
+            }
+
+            r.set(obj,
+                v.realmify(
+                    supportedRealmTypes.first { clazz ->
+                        clazz.simpleName == "Realm${f.type.simpleName}"
+                    }
+                )
+            )
+        }
+    }
+
+    return obj
 }
 
 class RemoteModelDataSource(
 ) {
-    private val FUN = ""
+    private val FUN = "https://3ofwdrmnxc2t2jz2xneowmk5ji0nvrum.lambda-url.us-east-1.on.aws/"
+    private val FUN2 = "https://uusruczagjhr7xgbbi7upuh5t40yrret.lambda-url.us-east-1.on.aws/"
 
     fun createModel(userId: String): DLSTMPModel {
         val conn = URL(FUN).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
+        conn.requestMethod = "GET"
         conn.setRequestProperty("Content-type", "*/*")
         conn.setRequestProperty("Accept", "*/*")
         conn.doInput = true
@@ -296,7 +492,9 @@ class RemoteModelDataSource(
 
     fun getModel(userId: String): DLSTMPModel {
         val conn = URL(FUN).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 10000
+        conn.readTimeout = 50000
         conn.setRequestProperty("Content-type", "*/*")
         conn.setRequestProperty("Accept", "*/*")
         conn.doInput = true
@@ -304,23 +502,40 @@ class RemoteModelDataSource(
 
         val jsonConfig = Gson().toJson(
             object {
-                var spotify_id = userId
+                var user_id = userId
                 var action = "get"
-                var look_back = 5
+                var look_back = 1
                 var epochs = 2
             }
         )
-        Log.e(TAG, "jsonConfig - $jsonConfig")
 
         val outputStream = conn.outputStream
-        val inputStream = conn.inputStream
 
         outputStream.write(jsonConfig.toByteArray())
+        outputStream.flush()
 
-        val tfliteModel = Base64.decode(inputStream.readBytes(), 0)
+        val inputStream = conn.inputStream
+
+        val encoded = String(inputStream.readBytes(), Charsets.UTF_8)
+        Log.e(TAG, "json - $encoded")
+
+        val obj = Gson().fromJson(encoded, object {
+            var statusCode: Int? = null
+            var optimised: Boolean? = null
+            var body = object {
+                var model: String? = null
+                var timestamp: Long? = null
+                var version: String? = null
+            }
+        }::class.java)
+
+        val tfliteModel = Base64.decode(obj.body.model!!, 0)
 
         val m = File.createTempFile("model", ".tflite")
         m.writeBytes(tfliteModel)
+
+        inputStream.close()
+        outputStream.close()
 
         return DLSTMPModel(m)
     }

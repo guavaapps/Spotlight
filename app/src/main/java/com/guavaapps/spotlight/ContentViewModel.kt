@@ -47,14 +47,21 @@ class ContentViewModel : ViewModel() {
     private var isWaiting = false
     private var needsTrack = true
     private var needsNextTrack = true
+
     private val tracks: Queue<TrackWrapper?> = LinkedList()
+
     val spotifyService = MutableLiveData<SpotifyService>()
     val spotifyAppRemote = MutableLiveData<SpotifyAppRemote>()
+
     val user = MutableLiveData<UserWrapper>()
+    lateinit var realmUser: User
+
     val track = MutableLiveData<TrackWrapper?>()
     val progress = MutableLiveData<Long>()
     val nextTrack = MutableLiveData<TrackWrapper?>()
+
     val album: MutableLiveData<AlbumWrapper?> = MutableLiveData()
+
     private var mPlayerStateListener: ScheduledExecutorService? = null
 
     private var featuresMap = mapOf(
@@ -74,7 +81,7 @@ class ContentViewModel : ViewModel() {
         "valence" to 13
     )
 
-    private var localTimeline = mutableListOf<FloatArray>()
+    private var localTimeline = mutableListOf<TrackModel>()
 
     fun initForUser(
         context: Context,
@@ -85,6 +92,8 @@ class ContentViewModel : ViewModel() {
         if (user.value != null) {
             logOutUser()
         }
+
+        mongoClient
 
         spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
             override fun success(t: UserPrivate?, response: Response?) {
@@ -130,15 +139,16 @@ class ContentViewModel : ViewModel() {
         })
     }
 
+    fun pushBatch() {
+        with(userRepository.get()) {
+            timeline.addAll(localTimeline)
+            userRepository.update(this)
+        }
+    }
+
     fun logOutUser() {
         val user = userRepository.get()
-        user.timeline.addAll(
-            localTimeline.map {
-                TrackModel().apply {
-                    features = RealmList(*it.toTypedArray())
-                }
-            }
-        )
+        user.timeline.addAll(localTimeline)
 
         userRepository.update(user)
     }
@@ -162,7 +172,11 @@ class ContentViewModel : ViewModel() {
     private fun getNextTrackFeatures(): FloatArray {
         val model = modelRepository.model
 
-        scaleMinMax(localTimeline.toTypedArray()).also {
+        localTimeline
+
+        val timeline = localTimeline.map { it.features.toFloatArray() }.toTypedArray()
+
+        scaleMinMax(timeline).also {
             return invertMinMax(
                 it.apply {
                     result = arrayOf(model.getNext(it.result))
@@ -171,11 +185,9 @@ class ContentViewModel : ViewModel() {
         }
     }
 
-    private fun getTimeline(): MutableList<FloatArray> {
+    private fun getTimeline(): RealmList<TrackModel> {
         return userRepository.get()
             .timeline
-            .map { it.features.toFloatArray() }
-            .toMutableList()
     }
 
     private fun createParamsObject(features: FloatArray): Map<String, Any> {
@@ -290,14 +302,26 @@ class ContentViewModel : ViewModel() {
         }
     }
 
-    fun logSuccess(tracks: Array<RealmTrack>) {
+    fun createModel() {
+        pushBatch()
+        modelRepository.createModel()
+    }
+
+    fun logBatch(tracks: Array<RealmTrack>) {
         val ids = tracks.map { it.id }
 
         spotifyService.value!!.getTracksAudioFeatures(
             ids.joinToString(","),
             object : Callback<AudioFeaturesTracks> {
                 override fun success(t: AudioFeaturesTracks?, response: Response?) {
-                    localTimeline.addAll(t!!.audio_features.map { it.extractFeatures() })
+                    localTimeline.addAll(t!!.audio_features.mapIndexed { index, track ->
+                        TrackModel().apply {
+                            spotify_id = user.value!!.user.id
+                            track_id = track.id
+                            features = RealmList(*track.extractFeatures().toTypedArray())
+                            timestamp = System.currentTimeMillis()
+                        }
+                    })
                 }
 
                 override fun failure(error: RetrofitError?) {
@@ -365,7 +389,8 @@ class ContentViewModel : ViewModel() {
         return features.toFloatArray()
     }
 
-    fun play() {
+    @Deprecated ("Use play (uri) or play ()")
+    fun playD() {
         val playerApi = spotifyAppRemote.value!!.playerApi
         val track = track.value!!.track
         if (playerApi == null || track == null) return
@@ -377,18 +402,28 @@ class ContentViewModel : ViewModel() {
             }
     }
 
-    fun play(wrappedTrack: TrackWrapper) {
+    fun play() {
+        val uri = track.value!!.track.uri
+
+        play(uri)
+    }
+
+    fun play(uri: String) {
         val playerApi = spotifyAppRemote.value!!.playerApi
-        val track = wrappedTrack.track
-        if (playerApi == null || track == null) return
+
         startPlayerStateListener()
-        playerApi.play(track.uri)
+
+        playerApi.playerState.setResultCallback {
+            if (it.track.uri == uri) playerApi.resume() else playerApi.play(uri)
+            if (it.playbackOptions.repeatMode != Repeat.ONE) playerApi.setRepeat(Repeat.ONE)
+        }
+
+        playerApi.play(uri)
     }
 
     fun pause() {
         val playerApi = spotifyAppRemote.value!!.playerApi
         stopPlayerStateListener()
-        if (playerApi == null) return
         playerApi.pause()
     }
 

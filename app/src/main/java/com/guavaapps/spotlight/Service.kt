@@ -7,7 +7,6 @@ import com.google.gson.Gson
 import com.guavaapps.spotlight.realm.*
 import com.pixel.spotifyapi.Objects.*
 import io.realm.*
-import io.realm.annotations.RealmClass
 import io.realm.mongodb.App
 import io.realm.mongodb.AppConfiguration
 import io.realm.mongodb.Credentials
@@ -15,15 +14,9 @@ import io.realm.mongodb.sync.*
 import org.bson.Document
 import org.bson.types.ObjectId
 import org.tensorflow.lite.Interpreter
-import retrofit.http.Body
-import retrofit.http.POST
 import java.io.File
-import java.lang.Exception
-import java.lang.reflect.Type
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.spec.ECField
-import java.lang.Class as Class
 
 private const val TAG = "Service"
 
@@ -182,6 +175,10 @@ class ModelRepository(
             })
     }
 
+    fun createModel(): DLSTMPModel {
+        return remoteModelDataSource.createModel(userId)
+    }
+
     private fun loadModel(): DLSTMPModel {
         return remoteModelDataSource.getModel(userId)
     }
@@ -227,10 +224,10 @@ class LocalRealm(context: Context) {
         }
     }
 
-    fun testPut () {
-        val obj = Track ()
+    fun testPut() {
+        val obj = Track()
 
-        put(obj) {o -> o.realmify(supportedRealmTypes.first { it.simpleName == "Realm${o::class.java.simpleName}" }) }
+        put(obj) { o -> o.realmify(supportedRealmTypes.first { it.simpleName == "Realm${o::class.java.simpleName}" }) }
     }
 
     fun <E> Any.mapTo(clazz: Class<E>, supportedTypes: List<Class<*>>) {
@@ -275,6 +272,11 @@ class LocalRealm(context: Context) {
             }
 
             val realmTrack = track.realmify(RealmTrack::class.java)
+
+            val obj = realmTrack.derealmify(Track::class.java)
+
+            Log.e(TAG, "realmTrack - id=${realmTrack.id}")
+            Log.e(TAG, "realmTrack - id=${obj.id}")
 
             for (f in realmTrack::class.java.fields) {
                 Log.e(TAG, "${f.name}=${f.get(realmTrack)}")
@@ -387,6 +389,20 @@ class LocalRealm(context: Context) {
     }
 }
 
+val supportedTypes = listOf(
+    Track::class.java,
+    TrackSimple::class.java,
+    AlbumSimple::class.java,
+    ArtistSimple::class.java,
+    Artist::class.java,
+    Album::class.java,
+    LinkedTrack::class.java,
+    Image::class.java,
+    Pager::class.java,
+    Copyright::class.java,
+    Followers::class.java
+)
+
 val supportedRealmTypes = listOf(
     RealmTrack::class.java,
     RealmTrackSimple::class.java,
@@ -401,12 +417,73 @@ val supportedRealmTypes = listOf(
     RealmFollowers::class.java
 )
 
+fun <E> Any.derealmify(objectClass: Class<E>): E {
+    val c = this::class.java
+    val obj = objectClass.newInstance()!!
+
+    Log.e(TAG, "fields - ${c.fields.size} ${c.declaredFields.size}")
+    c.declaredFields.forEach {
+        objectClass.fields.find { r -> r.name == it.name } ?: return@forEach
+
+        it.isAccessible = true
+        val v = it.get(this) ?: return@forEach
+
+        Log.e(TAG, "${it.name} - isPrimitive=${it.type.isPrimitive}")
+        Log.e(TAG, "type - ${it.type.name}")
+
+        val r = objectClass.getField(it.name)
+        r.isAccessible = true
+
+        if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type) || Number::class.java.isAssignableFrom(
+                it.type)
+        ) {
+            Log.e(TAG, "primitive or string")
+
+            r.set(obj, v)
+        } else if (RealmList::class.java.isAssignableFrom(it.type)) {
+            Log.e(TAG, "list")
+
+            r.apply {
+                isAccessible = true
+                val items = (v as RealmList<*>).toMutableList()
+
+                set(obj, items)
+            }
+        }
+        // is map
+        else if (RealmDictionary::class.java.isAssignableFrom(it.type)) {
+            Log.e(TAG, "map")
+            val entries =
+                (v as RealmDictionary<*>).entries.toTypedArray().map { it.toPair() }.toTypedArray()
+            r.set(obj, mutableMapOf(*entries))
+        } else {
+            Log.e(TAG, "realmifiable")
+
+            val f = if (it in c.declaredFields) {
+                c.getDeclaredField(it.name)
+            } else {
+                c.superclass.getDeclaredField(it.name)
+            }
+
+            r.set(obj,
+                v.realmify(
+                    supportedTypes.first { clazz ->
+                        clazz.simpleName == f.type.simpleName.removePrefix("Realm")
+                    }
+                )
+            )
+        }
+    }
+
+    return obj
+}
+
 fun <E> Any.realmify(realmClass: Class<E>): E {
     val c = this::class.java
-    val obj = realmClass.newInstance()
+    val obj = realmClass.newInstance()!!
 
     c.fields.forEach {
-        if (it.name == "CREATOR") return@forEach
+        realmClass.declaredFields.find { r -> r.name == it.name } ?: return@forEach
 
         val v = it.get(this) ?: return@forEach
 
@@ -436,8 +513,7 @@ fun <E> Any.realmify(realmClass: Class<E>): E {
 
             val f = if (it in c.declaredFields) {
                 c.getDeclaredField(it.name)
-            }
-            else {
+            } else {
                 c.superclass.getDeclaredField(it.name)
             }
 
@@ -452,6 +528,72 @@ fun <E> Any.realmify(realmClass: Class<E>): E {
     }
 
     return obj
+}
+
+//fun <E> mapTo(o: Any, objectClass: Class<E>, depthResolver: (o: Any, clazz: Class<*>) ->): E {
+//    val c = o::class.java
+//    val obj = objectClass.newInstance()!!
+//
+//    c.fields.forEach {
+//        objectClass.declaredFields.find { r -> r.name == it.name } ?: return@forEach
+//
+//        val v = it.get(o) ?: return@forEach
+//
+//        Log.e(TAG, "${it.name} - isPrimitive=${it.type.isPrimitive}")
+//
+//        val r = objectClass.getDeclaredField(it.name)
+//        r.isAccessible = true
+//
+//        if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type)) {
+//            Log.e(TAG, "primitive or string")
+//
+//            r.set(obj, v)
+//        } else if (List::class.java.isAssignableFrom(it.type)) {
+//            Log.e(TAG, "list")
+//
+//            r.apply {
+//                isAccessible = true
+//                set(obj, RealmList(*(v as MutableList<*>).toTypedArray()))
+//            }
+//        }
+//        // is map
+//        else if (Map::class.java.isAssignableFrom(it.type)) {
+//            Log.e(TAG, "map")
+//            r.set(obj, RealmDictionary(v as Map<String, *>))
+//        } else {
+//            Log.e(TAG, "realmifiable")
+//
+//            val f = if (it in c.declaredFields) {
+//                c.getDeclaredField(it.name)
+//            } else {
+//                c.superclass.getDeclaredField(it.name)
+//            }
+//
+//            r.set(obj,
+//                v.realmify(
+//                    supportedRealmTypes.first { clazz ->
+//                        clazz.simpleName == "Realm${f.type.simpleName}"
+//                    }
+//                )
+//            )
+//        }
+//    }
+//
+//    return obj
+//}
+
+fun Any.realmMap(): RealmObject {
+    val realmClass =
+        supportedRealmTypes.first { it.simpleName == "Realm${this::class.java.simpleName}" }
+
+    return this.realmify(realmClass)//mapTo(realmClass) { it.realmMap() }
+}
+
+fun Any.realmMapFrom(): Any {
+    val objectClass =
+        supportedTypes.first { it.simpleName == this::class.java.simpleName.removePrefix("Realm") }
+
+    return this.derealmify(objectClass)//mapTo(objectClass) { it.realmMapFrom() }
 }
 
 class RemoteModelDataSource(
@@ -706,14 +848,18 @@ class MongoClient(val context: Context) {
             }
 
             if (firstLogin) {
-                it.insert(user)
                 user.date_signed_up = user.last_login
+                it.insert(user)
             } else {
                 it.insertOrUpdate(user)
             }
         }
 
         return realm!!
+    }
+
+    fun logout () {
+        app.currentUser()?.logOut()
     }
 
     interface Callback<T> {

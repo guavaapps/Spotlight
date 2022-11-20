@@ -27,12 +27,12 @@ import retrofit.RetrofitError
 import retrofit.client.Response
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.lang.Exception
 import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import kotlin.Exception
 
 class ContentViewModel : ViewModel() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -93,41 +93,43 @@ class ContentViewModel : ViewModel() {
             logOutUser()
         }
 
-        mongoClient
-
         spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
             override fun success(t: UserPrivate?, response: Response?) {
                 executor.execute {
-                    val bitmap = from(t!!.images[0].url)
+                    try {
+                        val bitmap = from(t!!.images[0].url)
 
-                    val userId = t.id
+                        val userId = t.id
 
-                    mongoClient = MongoClient(context)
+                        mongoClient = MongoClient(context)
 
-                    val remoteModelDataSource = RemoteModelDataSource()
+//                        val remoteModelDataSource = RemoteModelDataSource()
+//
+//                        modelRepository = ModelRepository(
+//                            userId,
+//                            mongoClient,
+//                            remoteModelDataSource
+//                        )
 
-                    modelRepository = ModelRepository(
-                        userId,
-                        mongoClient,
-                        remoteModelDataSource
-                    )
-
-                    userRepository = UserRepository(
-                        userId,
-                        mongoClient
-                    )
-
-                    localRealm = LocalRealm(context)
-
-                    localTimeline = getTimeline()
-
-                    uiHandler.post {
-                        user.value = UserWrapper(
-                            t,
-                            bitmap
+                        userRepository = UserRepository(
+                            userId,
+                            mongoClient
                         )
 
-                        getNext()
+                        localRealm = LocalRealm(context)
+
+                        localTimeline = getTimeline()
+
+                        uiHandler.post {
+                            user.value = UserWrapper(
+                                t,
+                                bitmap
+                            )
+
+                            getNext()
+                        }
+                    }catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
             }
@@ -172,8 +174,6 @@ class ContentViewModel : ViewModel() {
     private fun getNextTrackFeatures(): FloatArray {
         val model = modelRepository.model
 
-        localTimeline
-
         val timeline = localTimeline.map { it.features.toFloatArray() }.toTypedArray()
 
         scaleMinMax(timeline).also {
@@ -201,7 +201,10 @@ class ContentViewModel : ViewModel() {
 
         Log.e(TAG, "map - $map")
 
-        return map.toMap()
+//        return map.toMap()
+        return mutableMapOf<String, Any>(
+//            "seed_genres" to "hip-hop"
+        ).toMap()
     }
 
     private var hasRetried = false
@@ -248,9 +251,20 @@ class ContentViewModel : ViewModel() {
 
                 isWaiting = true
 
+                spotifyService.value!!.getSeedsGenres(object : Callback<SeedsGenres> {
+                    override fun success(t: SeedsGenres?, response: Response?) {
+                        Log.e(TAG, "genres - ${t!!.genres.joinToString(", ")}")
+                    }
+
+                    override fun failure(error: RetrofitError?) {
+                        Log.e(TAG, "error - ${error!!.message}")
+                    }
+
+                })
+
                 spotifyService.value!!.getRecommendations(
                     createParamsObject(
-                        getNextTrackFeatures()
+                        floatArrayOf()//getNextTrackFeatures()
                     ), object : Callback<Recommendations> {
                         override fun success(t: Recommendations?, response: Response?) {
                             t!!.tracks.removeFirst().also {
@@ -316,8 +330,7 @@ class ContentViewModel : ViewModel() {
                 override fun success(t: AudioFeaturesTracks?, response: Response?) {
                     localTimeline.addAll(t!!.audio_features.mapIndexed { index, track ->
                         TrackModel().apply {
-                            spotify_id = user.value!!.user.id
-                            track_id = track.id
+                            id = track.id
                             features = RealmList(*track.extractFeatures().toTypedArray())
                             timestamp = System.currentTimeMillis()
                         }
@@ -389,7 +402,7 @@ class ContentViewModel : ViewModel() {
         return features.toFloatArray()
     }
 
-    @Deprecated ("Use play (uri) or play ()")
+    @Deprecated("Use play (uri) or play ()")
     fun playD() {
         val playerApi = spotifyAppRemote.value!!.playerApi
         val track = track.value!!.track

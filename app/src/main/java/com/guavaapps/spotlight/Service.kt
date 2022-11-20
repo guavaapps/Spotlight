@@ -12,7 +12,6 @@ import io.realm.mongodb.AppConfiguration
 import io.realm.mongodb.Credentials
 import io.realm.mongodb.sync.*
 import org.bson.Document
-import org.bson.types.ObjectId
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.net.HttpURLConnection
@@ -642,7 +641,7 @@ class RemoteModelDataSource(
         conn.doInput = true
         conn.doOutput = true
 
-        val jsonConfig = Gson().toJson(
+        val modelConfig = Gson().toJson(
             object {
                 var user_id = userId
                 var action = "get"
@@ -653,7 +652,7 @@ class RemoteModelDataSource(
 
         val outputStream = conn.outputStream
 
-        outputStream.write(jsonConfig.toByteArray())
+        outputStream.write(modelConfig.toByteArray())
         outputStream.flush()
 
         val inputStream = conn.inputStream
@@ -687,13 +686,13 @@ class MongoClient(val context: Context) {
     private val APP = "spotlight-kceqr"
 
     private val USERS = "user_subscription"
-    private val MODELS = "user_subscription"
+    private val MODELS = "model_subscription"
 
     private val SPOTIFY_ID = "spotify_id"
 
     private lateinit var app: App
     private var appUser: io.realm.mongodb.User? = null
-    private var realm: Realm? = null
+    private lateinit var realm: Realm
 
     fun login(user: String, callback: Callback<Realm>) {
         Realm.init(context)
@@ -793,7 +792,6 @@ class MongoClient(val context: Context) {
                     override fun onError(session: SyncSession, error: ClientResetRequiredError) {
                         Log.e(TAG, "client reset onError - error=${error.message}")
                     }
-
                 })
                 .build()
         )
@@ -814,51 +812,101 @@ class MongoClient(val context: Context) {
         val configuration = SyncConfiguration.Builder(appUser)
             .allowWritesOnUiThread(true)
             .allowQueriesOnUiThread(true)
+            .modules(RealmObjectsModule())
             .initialSubscriptions { realm, subscriptions ->
-//                        subscriptions.removeAll()
                 subscriptions.addOrUpdate(
                     Subscription.create(
                         USERS,
                         realm.where(User::class.java)
-                            .equalTo(SPOTIFY_ID, user)
+                            .equalTo("_id", user)
                     )
                 )
+
+//                subscriptions.addOrUpdate(
+//                    Subscription.create(
+//                        "${USERS}_timeline",
+//                        realm.where(TrackModel::class.java)
+//                    )
+//                )
+//
+//                subscriptions.addOrUpdate(
+//                    Subscription.create(
+//                        "${MODELS}_model_params",
+//                        realm.where(ModelParam::class.java)
+//                    )
+//                )
 
                 subscriptions.addOrUpdate(
                     Subscription.create(
                         MODELS,
                         realm.where(Model::class.java)
-                            .equalTo(SPOTIFY_ID, user)
+                            .equalTo("_id", user)
                     )
                 )
             }
+//            .initialData {
+//                it.insert(User().apply {
+//                    spotify_id = user
+//                    date_signed_up = Date(System.currentTimeMillis())
+//                    last_login = Date(System.currentTimeMillis())
+//                    locale = "l"
+//                    timeline = RealmList(TrackModel().apply {
+//                        id = user
+//                        features = RealmList()
+//                        timestamp = 0L
+//                    })
+//                })
+//            }
             .build()
 
-        realm = Realm.getInstance(configuration)
+        Log.d(TAG, "getting realm instance")
+
+
+        realm = Realm.getInstance(configuration)!!
+
+        Log.d(TAG, "inserting user")
 
         // TODO move asRealmObject mongoDB scheduled fun
-        realm!!.executeTransaction {
+
+        realm.executeTransaction {
+            val count = it.where(User::class.java)
+                .equalTo("_id", user)
+                .count()
+
+            Log.e(TAG, "users - $count")
+
             val firstLogin = it.where(User::class.java)
-                .equalTo("spotify_id", user)
+                .equalTo("_id", user)
                 .count() == 0L
 
-            val user = User(ObjectId()).apply {
+            Log.e(TAG, "first login - $firstLogin")
+
+            val userObject = User().apply {
                 spotify_id = user
-                last_login = System.currentTimeMillis()
+                date_signed_up = userData.getDate("created")
+                locale = "locale"
             }
 
             if (firstLogin) {
-                user.date_signed_up = user.last_login
-                it.insert(user)
+                userObject.last_login = userObject.date_signed_up
+                it.insert(userObject)
             } else {
-                it.insertOrUpdate(user)
+                it.where(User::class.java)
+                    .equalTo("_id", user)
+                    .findAll().forEach { u ->
+                        Log.e(TAG,
+                            "id=${u.spotify_id} created=${u.date_signed_up} last_login=${u.last_login} locale=${u.locale}")
+                    }
+//                it.insertOrUpdate(user)
             }
+
+
         }
 
-        return realm!!
+        return realm
     }
 
-    fun logout () {
+    fun logout() {
         app.currentUser()?.logOut()
     }
 

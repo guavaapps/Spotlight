@@ -1,26 +1,34 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
-import io.realm.*
+import io.realm.RealmAny
+import io.realm.RealmDictionary
+import io.realm.RealmList
+import io.realm.RealmObject
 import io.realm.annotations.*
 import org.bson.types.ObjectId
 import java.nio.ByteBuffer
 import java.util.*
 
-@RealmModule (classes = [User::class, Model::class, TrackModel::class, ModelParam::class])
+@RealmModule(classes = [User::class, Model::class, TrackModel::class, ModelParam::class])
 open class RealmObjectsModule
 
-open class User: RealmObject() {
+open class AppUser(
     @PrimaryKey
-    @Required
-    @RealmField ("_id")
-    var spotify_id: String? = null
-    var date_signed_up: Date? = null
-    var last_login: Date? = null
-    var locale: String? = null
+    var _id: String = "",
+    var spotify_id: String = "",
+    var created: Date = Date()
+) : RealmObject()
 
-    var timeline: RealmList<TrackModel> = RealmList()
-}
+open class User(
+    @PrimaryKey
+    @RealmField("_id")
+    var spotify_id: String = "",
+    var date_signed_up: Date? = null,
+    var last_login: Date? = null,
+    var locale: String? = null,
+    var timeline: RealmList<TrackModel> = RealmList(),
+) : RealmObject() {}
 
 //class TimelineTrack(
 //    @PrimaryKey
@@ -31,26 +39,27 @@ open class User: RealmObject() {
 //}
 //
 open class Model(
-) : RealmObject() {
     @PrimaryKey
-    @Required
-    @RealmField ("_id")
-    var spotify_id: String? = null
-    var model_params: RealmList<ModelParam> = RealmList()
-}
+//    @Required
+    @RealmField("_id")
+    var spotify_id: String = "",
+    var timestamp: Long? = null,
+    var model_params: RealmList<ModelParam> = RealmList(),
+) : RealmObject() {}
 
-@RealmClass (embedded = true)
-open class ModelParam: RealmObject() {
+@RealmClass(embedded = true)
+open class ModelParam(
     @Required
-    var params: RealmList<Float> = RealmList()
+    var params: RealmList<Float> = RealmList(),
+
     @Required
-    var shape: RealmList <Int> = RealmList ()
-}
+    var shape: RealmList<Int> = RealmList(),
+) : RealmObject() {}
 
 open class RealmTrack(
 ) : RealmObject() {
     @PrimaryKey
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null
     var name: String? = null
     var uri: String? = null
@@ -98,8 +107,9 @@ open class RealmAlbumSimple(
     var available_markets: RealmList<String>? = null
     var external_urls: RealmDictionary<String>? = null
     var href: String? = null
+
     @PrimaryKey
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null
     var images: RealmList<RealmImage>? = null
     var name: String? = null
@@ -107,7 +117,7 @@ open class RealmAlbumSimple(
     var uri: String? = null
 }
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class RealmBitmap : RealmObject() {
     var bytes: ByteArray? = null
     var width: Int? = null
@@ -144,8 +154,9 @@ open class RealmAlbum : RealmObject() {
     var available_markets: RealmList<String>? = null
     var external_urls: RealmDictionary<String>? = null
     var href: String? = null
+
     @PrimaryKey
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null
     var images: RealmList<RealmImage>? = null
     var name: String? = null
@@ -162,7 +173,7 @@ open class RealmAlbum : RealmObject() {
     var tracks: RealmPager? = null
 }
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class RealmCopyright : RealmObject() {
     var text: String? = null
     var type: String? = null
@@ -185,31 +196,32 @@ open class RealmArtist(
     var popularity: Int? = null
 }
 
-open class RealmArtistSimple: RealmObject() {
+open class RealmArtistSimple : RealmObject() {
     var external_urls = RealmDictionary<String>()
     var href: String? = null
+
     @PrimaryKey
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null
     var name: String? = null
     var type: String? = null
     var uri: String? = null
 }
 
-@RealmClass (embedded = true)
-open class RealmFollowers: RealmObject() {
+@RealmClass(embedded = true)
+open class RealmFollowers : RealmObject() {
     var href: String? = null
     var total: Int? = null
 }
 
-@RealmClass (embedded = true)
-open class RealmImage: RealmObject() {
+@RealmClass(embedded = true)
+open class RealmImage : RealmObject() {
     var width: Int? = null
     var height: Int? = null
     var url: String? = null
 }
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class RealmPager : RealmObject() {
     var href: String? = null
     var items: RealmList<RealmAny> = RealmList()
@@ -227,6 +239,7 @@ open class RealmTrackWrapper(
     var track: RealmTrack? = null
     var bitmap: RealmBitmap? = null
 }
+
 //
 open class RealmAlbumWrapper(
     @PrimaryKey
@@ -244,7 +257,7 @@ open class RealmArtistWrapper(
     var bitmap: RealmBitmap? = null
 }
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class RealmLinkedTrack : RealmObject() {
     var external_urls: RealmDictionary<String>? = null
     var href: String? = null
@@ -253,10 +266,11 @@ open class RealmLinkedTrack : RealmObject() {
     var id: String? = null
 }
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class TrackModel : RealmObject() {
-//    var spotify_id: String? = null
+    //    var spotify_id: String? = null
     var id: String? = null
+
     @Required
     var features: RealmList<Float> = RealmList()
     var timestamp: Long? = null

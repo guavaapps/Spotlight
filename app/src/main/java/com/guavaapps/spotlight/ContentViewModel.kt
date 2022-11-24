@@ -1,5 +1,6 @@
 package com.guavaapps.spotlight
 
+import android.app.Application
 import android.content.Context
 import com.guavaapps.components.bitmap.BitmapTools.from
 import com.pixel.spotifyapi.SpotifyService
@@ -15,13 +16,11 @@ import androidx.core.os.HandlerCompat
 import androidx.lifecycle.*
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.CreationExtras
-import com.guavaapps.spotlight.realm.RealmAlbumWrapper
-import com.guavaapps.spotlight.realm.RealmTrack
-import com.guavaapps.spotlight.realm.TrackModel
-import com.guavaapps.spotlight.realm.User
+import com.guavaapps.spotlight.realm.*
 import com.pixel.spotifyapi.Objects.*
 import io.realm.Realm
 import io.realm.RealmList
+import io.realm.mongodb.Credentials
 import retrofit.Callback
 import retrofit.RetrofitError
 import retrofit.client.Response
@@ -93,6 +92,8 @@ class ContentViewModel : ViewModel() {
             logOutUser()
         }
 
+        Realm.init(context)
+
         spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
             override fun success(t: UserPrivate?, response: Response?) {
                 executor.execute {
@@ -102,8 +103,9 @@ class ContentViewModel : ViewModel() {
                         val userId = t.id
 
                         mongoClient = MongoClient(context)
+                        mongoClient.login(userId)
 
-//                        val remoteModelDataSource = RemoteModelDataSource()
+                        val remoteModelDataSource = RemoteModelDataSource()
 //
 //                        modelRepository = ModelRepository(
 //                            userId,
@@ -116,19 +118,19 @@ class ContentViewModel : ViewModel() {
                             mongoClient
                         )
 
-                        localRealm = LocalRealm(context)
-
-                        localTimeline = getTimeline()
-
-                        uiHandler.post {
-                            user.value = UserWrapper(
-                                t,
-                                bitmap
-                            )
-
-                            getNext()
-                        }
-                    }catch (e: Exception) {
+//                        localRealm = LocalRealm(context)
+//
+//                        localTimeline = getTimeline()
+//
+//                        uiHandler.post {
+//                            user.value = UserWrapper(
+//                                t,
+//                                bitmap
+//                            )
+//
+//                            getNext()
+//                        }
+                    } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
@@ -142,17 +144,17 @@ class ContentViewModel : ViewModel() {
     }
 
     fun pushBatch() {
-        with(userRepository.get()) {
-            timeline.addAll(localTimeline)
-            userRepository.update(this)
-        }
+//        with(userRepository.get()) {
+//            timeline.addAll(localTimeline)
+//            userRepository.update(this)
+//        }
     }
 
     fun logOutUser() {
-        val user = userRepository.get()
-        user.timeline.addAll(localTimeline)
+//        val user = userRepository.get()
+//        user.timeline.addAll(localTimeline)
 
-        userRepository.update(user)
+//        userRepository.update(user)
     }
 
     fun getUserAsync() {
@@ -186,8 +188,9 @@ class ContentViewModel : ViewModel() {
     }
 
     private fun getTimeline(): RealmList<TrackModel> {
-        return userRepository.get()
-            .timeline
+//        return userRepository.get()
+//            .timeline
+        return RealmList()
     }
 
     private fun createParamsObject(features: FloatArray): Map<String, Any> {

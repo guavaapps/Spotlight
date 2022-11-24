@@ -1,21 +1,28 @@
 package com.guavaapps.spotlight
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
-import com.guavaapps.spotlight.realm.*
+import com.guavaapps.spotlight.realm.AppUser
+import com.guavaapps.spotlight.realm.Model
+import com.guavaapps.spotlight.realm.RealmTrack
 import com.pixel.spotifyapi.Objects.*
 import io.realm.*
+import io.realm.annotations.RealmField
 import io.realm.mongodb.App
 import io.realm.mongodb.AppConfiguration
 import io.realm.mongodb.Credentials
+import io.realm.mongodb.User
 import io.realm.mongodb.sync.*
 import org.bson.Document
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.*
 
 private const val TAG = "Service"
 
@@ -129,29 +136,16 @@ class DLSTMPModel(model: File) {
 
 class UserRepository(
     private val userId: String,
-    mongoClient: MongoClient,
+    private val mongoClient: MongoClient,
 ) {
-    private var realm: Realm
+    fun get(): AppUser {
+        val user = mongoClient.getUser()
 
-    init {
-        realm = mongoClient.login(userId)
+        return user
     }
 
-    fun get(): User {
-        return realm.where(User::class.java)
-            .equalTo("spotify_id", userId)
-            .findFirst()!!
-    }
-
-    fun update(user: User) {
-        realm.executeTransaction {
-            it.where(User::class.java)
-                .equalTo("spotify_id", user.spotify_id)
-                .findAll()
-                .deleteAllFromRealm()
-
-            it.insert(user)
-        }
+    fun update(user: AppUser) {
+        mongoClient.updateUser(user)
     }
 }
 
@@ -163,15 +157,75 @@ class ModelRepository(
     var model: DLSTMPModel
         private set
 
+    var modelConfig: Model? = null
+
     init {
         model = loadModel()
 
-        mongoClient.login(userId).where(Model::class.java)
-            .equalTo("spotify_id", userId)
-            .findFirst()
-            ?.addChangeListener(RealmObjectChangeListener { t, changeSet ->
-                loadModel()
-            })
+        mongoClient.watchModel {
+            if (modelConfig != null && it.timestamp!! > modelConfig!!.timestamp!!) {
+                modelConfig = it
+
+                Log.e(TAG, "model changed - ${it.spotify_id} ${it.timestamp}")
+            }
+        }
+
+//        Handler.createAsync(Looper.getMainLooper())
+//            .post {
+//                mongoClient.login(userId, object : MongoClient.Callback<Realm> {
+//                    override fun onResult(realm: Realm) {
+//                        modelConfig = realm.where(Model::class.java)
+//                            .equalTo("_id", userId)
+//                            .findFirst()
+//
+//                        Log.e(TAG, "model - ${modelConfig?.spotify_id} ${modelConfig?.timestamp}")
+//
+//                        modelConfig?.addChangeListener { t: Model, changeSet ->
+//                            Log.e(TAG, "model changed - ${t.spotify_id} ${t.timestamp}")
+//                        }
+//                    }
+//
+//                })
+//            }
+
+//        Handler.createAsync(Looper.getMainLooper())
+//            .post {
+//                val realm = mongoClient.getRealm(userId, appUser.customData)
+//
+//                modelConfig = realm.where(Model::class.java)
+//                    .equalTo("_id", userId)
+//                    .findFirstAsync()
+//                modelConfig?.addChangeListener(RealmObjectChangeListener<Model> { t, changeSet ->
+//                    Log.e(TAG, "model changed - ${t.spotify_id} ${t.timestamp} ${t.model_params.size}")
+//                })
+//
+//                Handler.createAsync(Looper.getMainLooper())
+//                    .postDelayed({
+//                        val timestamp = modelConfig?.timestamp
+//                        Log.e(TAG, "model - $timestamp")
+//                    }, 50000)
+//
+//
+////                val client = appUser.getMongoClient("mongodb-atlas")
+////                client.getDatabase("Spotlight")
+////                    .getCollection("Model")
+////                    .watchAsync (BsonString (userId))
+////                    .get {
+////                        val changedKey = it.get().documentKey
+////
+////                        Log.e(TAG, "changedKey - $changedKey")
+////                    }
+//
+//                //(RealmObjectChangeListener { t, changeSet ->
+////                    Log.e(TAG, "model updated")
+//
+//                //loadModel()
+////                })
+//
+////                realm.executeTransaction {
+////                    modelConfig!!.timestamp = 0L
+////                }
+//            }
     }
 
     fun createModel(): DLSTMPModel {
@@ -223,12 +277,6 @@ class LocalRealm(context: Context) {
         }
     }
 
-    fun testPut() {
-        val obj = Track()
-
-        put(obj) { o -> o.realmify(supportedRealmTypes.first { it.simpleName == "Realm${o::class.java.simpleName}" }) }
-    }
-
     fun <E> Any.mapTo(clazz: Class<E>, supportedTypes: List<Class<*>>) {
         val c = this::class.java
         val obj = clazz.newInstance()
@@ -249,38 +297,6 @@ class LocalRealm(context: Context) {
     }
 
     companion object {
-        fun test() {
-            val track = Track().apply {
-                id = "fksdjflksdj"
-                name = "track_name"
-                linked_from = LinkedTrack().apply {
-                    id = ""
-                    href = ""
-                    type = ""
-                    uri = ""
-                    external_urls = mutableMapOf("" to "")
-                }
-                artists = listOf(
-                    ArtistSimple().apply {
-                        name = "artist_1"
-                    },
-                    ArtistSimple().apply {
-                        name = "artist_2"
-                    }
-                )
-            }
-
-            val realmTrack = track.realmify(RealmTrack::class.java)
-
-            val obj = realmTrack.derealmify(Track::class.java)
-
-            Log.e(TAG, "realmTrack - id=${realmTrack.id}")
-            Log.e(TAG, "realmTrack - id=${obj.id}")
-
-            for (f in realmTrack::class.java.fields) {
-                Log.e(TAG, "${f.name}=${f.get(realmTrack)}")
-            }
-        }
     }
 
 //    fun <E> Any.realmify(realmClass: Class<E>) {
@@ -332,43 +348,6 @@ class LocalRealm(context: Context) {
 //        }
 //    }
 
-    val supportedRealmTypes = listOf(
-        RealmTrack::class.java,
-        RealmTrackSimple::class.java,
-        RealmAlbumSimple::class.java,
-        RealmArtistSimple::class.java,
-        RealmArtist::class.java,
-        RealmAlbum::class.java,
-        RealmLinkedTrack::class.java,
-        RealmImage::class.java,
-        RealmPager::class.java,
-        RealmCopyright::class.java,
-        RealmFollowers::class.java
-    )
-
-    val supportedTypes = listOf(
-        Track::class.java,
-        TrackSimple::class.java,
-        AlbumSimple::class.java,
-        ArtistSimple::class.java,
-        Artist::class.java,
-        Album::class.java,
-        LinkedTrack::class.java,
-        Image::class.java,
-        Pager::class.java,
-        Copyright::class.java,
-        Followers::class.java
-    )
-
-    fun testPutTrack() {
-        val track = Track()
-        val album = Album()
-
-        put(track, this::realmifyTrack)
-
-        val a = get(RealmTrack::class.java, track.id)// { it as Track }
-    }
-
     private fun drealm(r: RealmTrack?): Track? {
         r ?: return null
 
@@ -387,34 +366,6 @@ class LocalRealm(context: Context) {
 
     }
 }
-
-val supportedTypes = listOf(
-    Track::class.java,
-    TrackSimple::class.java,
-    AlbumSimple::class.java,
-    ArtistSimple::class.java,
-    Artist::class.java,
-    Album::class.java,
-    LinkedTrack::class.java,
-    Image::class.java,
-    Pager::class.java,
-    Copyright::class.java,
-    Followers::class.java
-)
-
-val supportedRealmTypes = listOf(
-    RealmTrack::class.java,
-    RealmTrackSimple::class.java,
-    RealmAlbumSimple::class.java,
-    RealmArtistSimple::class.java,
-    RealmArtist::class.java,
-    RealmAlbum::class.java,
-    RealmLinkedTrack::class.java,
-    RealmImage::class.java,
-    RealmPager::class.java,
-    RealmCopyright::class.java,
-    RealmFollowers::class.java
-)
 
 fun <E> Any.derealmify(objectClass: Class<E>): E {
     val c = this::class.java
@@ -466,9 +417,7 @@ fun <E> Any.derealmify(objectClass: Class<E>): E {
 
             r.set(obj,
                 v.realmify(
-                    supportedTypes.first { clazz ->
-                        clazz.simpleName == f.type.simpleName.removePrefix("Realm")
-                    }
+                    Class.forName(f.type.simpleName.removePrefix("Realm"))
                 )
             )
         }
@@ -518,9 +467,7 @@ fun <E> Any.realmify(realmClass: Class<E>): E {
 
             r.set(obj,
                 v.realmify(
-                    supportedRealmTypes.first { clazz ->
-                        clazz.simpleName == "Realm${f.type.simpleName}"
-                    }
+                    Class.forName("Realm${f.type.simpleName}")
                 )
             )
         }
@@ -580,20 +527,6 @@ fun <E> Any.realmify(realmClass: Class<E>): E {
 //
 //    return obj
 //}
-
-fun Any.realmMap(): RealmObject {
-    val realmClass =
-        supportedRealmTypes.first { it.simpleName == "Realm${this::class.java.simpleName}" }
-
-    return this.realmify(realmClass)//mapTo(realmClass) { it.realmMap() }
-}
-
-fun Any.realmMapFrom(): Any {
-    val objectClass =
-        supportedTypes.first { it.simpleName == this::class.java.simpleName.removePrefix("Realm") }
-
-    return this.derealmify(objectClass)//mapTo(objectClass) { it.realmMapFrom() }
-}
 
 class RemoteModelDataSource(
 ) {
@@ -683,7 +616,7 @@ class RemoteModelDataSource(
 }
 
 class MongoClient(val context: Context) {
-    private val APP = "spotlight-kceqr"
+    private val APP = "spotlight-gnmnp"//"spotlight-kceqr"
 
     private val USERS = "user_subscription"
     private val MODELS = "model_subscription"
@@ -691,10 +624,15 @@ class MongoClient(val context: Context) {
     private val SPOTIFY_ID = "spotify_id"
 
     private lateinit var app: App
-    private var appUser: io.realm.mongodb.User? = null
+    private lateinit var appUser: User
     private lateinit var realm: Realm
+    private lateinit var user: String
+    private var timestamp = 0L
 
-    fun login(user: String, callback: Callback<Realm>) {
+
+    fun login(user: String) {
+        this.user = user
+
         Realm.init(context)
 
         app = App(
@@ -727,191 +665,141 @@ class MongoClient(val context: Context) {
             )
         )
 
-        app.loginAsync(credentials) {
-            if (it.isSuccess) {
-                val appUser = app.currentUser()!!
-
-                val userData = appUser.customData
-                Log.e(TAG, "userData: $userData")
-
-                val configuration = SyncConfiguration.Builder(appUser)
-                    .allowWritesOnUiThread(true)
-                    .allowQueriesOnUiThread(true)
-                    .initialSubscriptions { realm, subscriptions ->
-//                        subscriptions.removeAll()
-                        subscriptions.addOrUpdate(
-                            Subscription.create(
-                                USERS,
-                                realm.where(User::class.java)
-                                    .equalTo(SPOTIFY_ID, user)
-                            )
-                        )
-                    }
-                    .build()
-
-                Realm.getInstanceAsync(configuration, object : Realm.Callback() {
-                    override fun onSuccess(realm: Realm) {
-                        Log.e(TAG, "realm instance obtained")
-
-                        callback.onResult(realm)
-                    }
-
-                    override fun onError(exception: Throwable) {
-                        Log.e(TAG, "realm sync error - ${exception.message}")
-                    }
-                })
-            } else {
-                Log.e(TAG, "${it.error.message}")
-            }
-        }
+        appUser = app.login(credentials)!!
     }
 
-    fun login(user: String): Realm {
-        if (appUser != null && appUser!!.customData.get("spotify_id", String::class.java)
-                .equals(user)
-        ) {
-            return realm!!
-        }
+    fun getUser(): AppUser {
+        val user = Document(mapOf(
+            "_id" to "hehe",
+            "spotify_id" to "jfdlsjfkd",
+            "created" to Date(System.currentTimeMillis())
+        ))
 
-        Realm.init(context)
-
-        app = App(
-            AppConfiguration.Builder(APP)
-                .defaultSyncClientResetStrategy(object : DiscardUnsyncedChangesStrategy {
-                    override fun onBeforeReset(realm: Realm) {
-                        Log.e(TAG, "client reset onBeforeReset - realmPath=${realm.path}")
-                    }
-
-                    override fun onAfterReset(before: Realm, after: Realm) {
-                        Log.e(
-                            TAG,
-                            "client reset onAfterReset - beforePath=${before.path} afterPath=${after.path}"
-                        )
-                    }
-
-                    override fun onError(session: SyncSession, error: ClientResetRequiredError) {
-                        Log.e(TAG, "client reset onError - error=${error.message}")
-                    }
-                })
-                .build()
-        )
-
-        val credentials = Credentials.customFunction(
-            Document(
-                mapOf(
-                    SPOTIFY_ID to user,
-                )
-            )
-        )
-
-        appUser = app.login(credentials)
-
-        val userData = appUser!!.customData
-        Log.e(TAG, "userData: $userData")
-
-        val configuration = SyncConfiguration.Builder(appUser)
-            .allowWritesOnUiThread(true)
-            .allowQueriesOnUiThread(true)
-            .modules(RealmObjectsModule())
-            .initialSubscriptions { realm, subscriptions ->
-                subscriptions.addOrUpdate(
-                    Subscription.create(
-                        USERS,
-                        realm.where(User::class.java)
-                            .equalTo("_id", user)
+        Handler.createAsync(Looper.getMainLooper()).post {
+            appUser.getMongoClient("mongodb-atlas")
+                .getDatabase("Spotlight")
+                .getCollection("users")
+                .findOne(Document(
+                    mapOf(
+                        "spotify_id" to this.user
                     )
-                )
-
-//                subscriptions.addOrUpdate(
-//                    Subscription.create(
-//                        "${USERS}_timeline",
-//                        realm.where(TrackModel::class.java)
-//                    )
-//                )
-//
-//                subscriptions.addOrUpdate(
-//                    Subscription.create(
-//                        "${MODELS}_model_params",
-//                        realm.where(ModelParam::class.java)
-//                    )
-//                )
-
-                subscriptions.addOrUpdate(
-                    Subscription.create(
-                        MODELS,
-                        realm.where(Model::class.java)
-                            .equalTo("_id", user)
-                    )
-                )
-            }
-//            .initialData {
-//                it.insert(User().apply {
-//                    spotify_id = user
-//                    date_signed_up = Date(System.currentTimeMillis())
-//                    last_login = Date(System.currentTimeMillis())
-//                    locale = "l"
-//                    timeline = RealmList(TrackModel().apply {
-//                        id = user
-//                        features = RealmList()
-//                        timestamp = 0L
-//                    })
-//                })
-//            }
-            .build()
-
-        Log.d(TAG, "getting realm instance")
-
-
-        realm = Realm.getInstance(configuration)!!
-
-        Log.d(TAG, "inserting user")
-
-        // TODO move asRealmObject mongoDB scheduled fun
-
-        realm.executeTransaction {
-            val count = it.where(User::class.java)
-                .equalTo("_id", user)
-                .count()
-
-            Log.e(TAG, "users - $count")
-
-            val firstLogin = it.where(User::class.java)
-                .equalTo("_id", user)
-                .count() == 0L
-
-            Log.e(TAG, "first login - $firstLogin")
-
-            val userObject = User().apply {
-                spotify_id = user
-                date_signed_up = userData.getDate("created")
-                locale = "locale"
-            }
-
-            if (firstLogin) {
-                userObject.last_login = userObject.date_signed_up
-                it.insert(userObject)
-            } else {
-                it.where(User::class.java)
-                    .equalTo("_id", user)
-                    .findAll().forEach { u ->
-                        Log.e(TAG,
-                            "id=${u.spotify_id} created=${u.date_signed_up} last_login=${u.last_login} locale=${u.locale}")
+                ))
+                .getAsync {
+                    if (it.isSuccess) {
+                        Log.e(TAG, "HOW IS IT FUCKING NULL ${it == null}")
+                        try {
+                            val id = it.get()["spotify_id"]
+                            Log.e(TAG, "user id - $id")
+                        } catch (e: Exception) {
+                        }
+                    } else {
+                        Log.e(TAG, "user error - ${it.error.message}")
                     }
-//                it.insertOrUpdate(user)
-            }
+                }
 
-
+            appUser.getMongoClient("mongodb-atlas")
+                .getDatabase("Spotlight")
+                .getCollection("Model")
+                .findOne(Document(
+                    mapOf(
+                        "_id" to this.user
+                    )
+                ))
+                .getAsync {
+                    if (it.isSuccess) {
+                        Log.e(TAG, "HOW IS IT FUCKING NULL ${it == null}")
+                        val id = it.get()["_id"]
+                        Log.e(TAG, "model id - $id")
+                    } else {
+                        Log.e(TAG, "model error - ${it.error.message}")
+                    }
+                }
         }
 
-        return realm
+        Log.e(TAG, "mongoClient user - $user")
+
+        val clazz = AppUser::class.java
+        val obj = clazz.newInstance()
+
+        clazz.fields.forEach {
+            it.isAccessible = true
+
+            val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
+            val v = user[fieldName]
+
+            it.set(obj, v)
+        }
+
+        return obj
     }
 
-    fun logout() {
-        app.currentUser()?.logOut()
+    fun updateUser(u: AppUser) {
+        val users = appUser.getMongoClient("mongodb-atlas")
+            .getDatabase("Spotlight")
+            .getCollection("users")
+
+        val obj = Document()
+
+        val clazz = u::class.java
+
+        clazz.fields.forEach {
+            it.isAccessible = true
+
+            val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
+            val v = it.get(u)
+
+            obj[fieldName] = v
+        }
+
+        users.updateOne(Document("_id", user), obj)
     }
 
-    interface Callback<T> {
-        fun onResult(result: T)
+    fun watchModel(result: (model: Model) -> Unit) {
+        val models = appUser.getMongoClient("mongodb-atlas")
+            .getDatabase("Spotlight")
+            .getCollection("Model")
+
+//        watchTillSuccess(models, result)
+
+        // TODO integrate with Matcha and replace MongoClient with instance of Matcha
+//        models.watchAsync(BsonString(user)).get {
+        models.watchAsync().get {
+            Log.e(TAG,
+                "watchAsync changed - isSuccess=${it.isSuccess} ${it.get()?.operationType} ${it.get()?.documentKey} ${it.get()?.updateDescription}")
+
+            if (!it.isSuccess) {
+                Handler.createAsync(Looper.getMainLooper()).post {
+                    models.findOne()
+                        .getAsync {
+                            if (!it.isSuccess) Log.e(TAG, "watcher error - ${it.error.message}")
+                            else Log.e(TAG,
+                                "model watcher error, checking config - update? ${timestamp != it.get()["timestamp"]}")
+                        }
+
+                }
+
+                return@get
+            }
+
+            val modelConfig = it.get().fullDocument!!
+
+            if (modelConfig["_id"] != user) return@get
+
+            val clazz = Model::class.java
+            val m = clazz.newInstance()
+
+            clazz.fields.forEach {
+                it.isAccessible = true
+
+                val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
+
+                it.set(m, modelConfig[fieldName])
+            }
+
+            Log.e(TAG, "model config - timestamp=${m.timestamp} ${modelConfig["timestamp"]}")
+
+            result(m)
+        }
     }
 }
 

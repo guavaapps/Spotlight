@@ -20,13 +20,13 @@ class Ky : Application() {
     fun initForUser(userId: String) {
         mongoClient = MongoClient(this)
 
-        val remoteModelDataSource = RemoteModelDataSource()
+//        val remoteModelDataSource = RemoteModelDataSource()
 
-        modelRepository = ModelRepository(
-            userId,
-            mongoClient,
-            remoteModelDataSource
-        )
+//        modelRepository = ModelRepository(
+//            userId,
+//            mongoClient,
+//            remoteModelDataSource
+//        )
 
         userRepository = UserRepository(
             userId,

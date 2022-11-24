@@ -15,6 +15,7 @@ import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.fragment.NavHostFragment
 import com.google.gson.Gson
+import com.guavaapps.spotlight.realm.Model
 import com.guavaapps.spotlight.realm.RealmTrack
 import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyApi
@@ -26,10 +27,15 @@ import com.spotify.sdk.android.auth.AuthorizationClient
 import com.spotify.sdk.android.auth.AuthorizationRequest
 import com.spotify.sdk.android.auth.AuthorizationResponse
 import io.realm.Realm
+import io.realm.mongodb.AppConfiguration
+import io.realm.mongodb.Credentials
 import io.realm.mongodb.User
+import io.realm.mongodb.mongo.MongoCollection
+import org.bson.Document
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private var spotifyService: SpotifyService? = null
@@ -106,10 +112,41 @@ class MainActivity : AppCompatActivity() {
 
                     viewModel.spotifyService.value = spotifyService!!
 
-                    viewModel.initForUser(
-                        this,
-                        spotifyService!!
-                    )
+//                    viewModel.initForUser(
+//                        this,
+//                        spotifyService!!
+//                    )
+                    Executors.newSingleThreadExecutor().execute {
+
+                        Realm.init(this)
+
+                        val spotify_id = "s37s05am9tq6uxbi8skoqwwh5"
+
+                        val credentials = Credentials.customFunction(
+                            Document(
+                                mapOf(
+                                    "spotify_id" to spotify_id
+                                )
+                            )
+                        )
+
+                        val APP = "spotlight-gnmnp"
+
+                        val matcha = Matcha.init(this, APP, "Spotlight")
+                        var match: Match<Model>? = null
+                        matcha.login(credentials)
+                        matcha.where(Model::class.java)
+                            .equalTo("_id", spotify_id).also { match = it }
+                            .watch {
+                                Log.e(TAG, "model config changed - ${it.spotify_id}")
+                            }
+
+                        Executors.newSingleThreadScheduledExecutor()
+                            .schedule({
+                                Log.e (TAG, "stopping watcher")
+                                match!!.stopWatching()
+                            }, 50000, TimeUnit.MILLISECONDS)
+                    }
 
 //                    mViewModel.getRecc ();
 //                    AppRepo.getInstance()

@@ -19,7 +19,7 @@ import com.spotify.android.appremote.api.SpotifyAppRemote
 import com.spotify.protocol.types.PlayerState
 
 class TrackSmallFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels ()
+    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
 
     private var isPlaying = false
 
@@ -37,7 +37,7 @@ class TrackSmallFragment : Fragment() {
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
+        savedInstanceState: Bundle?,
     ): View? {
         return inflater.inflate(R.layout.fragment_track_small, container, false)
     }

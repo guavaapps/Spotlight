@@ -16,6 +16,7 @@ import io.realm.mongodb.mongo.MongoDatabase
 import io.realm.mongodb.mongo.iterable.MongoCursor
 import org.bson.Document
 import java.lang.reflect.ParameterizedType
+import java.util.logging.Logger
 import javax.security.auth.login.LoginException
 import kotlin.reflect.KVisibility
 
@@ -35,19 +36,13 @@ class Match<E : RealmObject>(
         return this
     }
 
-    fun findFirst(): E {
-//        val clazz = object : TypeToken<E>() {}.rawType
+    fun findFirst(): E? {
+        val obj = collection.findOne(filter).get()
 
-        val d = mutableListOf<Document>()
-
-        return collection.findOne(filter).get().asMatchaObject(clazz) as E
+        return if (obj != null) obj.asMatchaObject(clazz) else null
     }
 
     fun findFirstAsync(onResult: (E) -> Unit) {
-//        val clazz = object : TypeToken<E>() {}.rawType
-
-        val d = mutableListOf<Document>()
-
         collection.findOne(filter).getAsync {
             if (it.isSuccess) {
                 onResult(it.get().asMatchaObject(clazz) as E)
@@ -57,8 +52,6 @@ class Match<E : RealmObject>(
 
     fun findAll(): List<E> {
         val objects = mutableListOf<E>()
-
-//        val clazz = object : TypeToken<E>() {}.rawType
 
         collection.find(filter)
             .iterator()
@@ -72,8 +65,6 @@ class Match<E : RealmObject>(
 
     fun findAllAsync(onResult: (List<E>) -> Unit) {
         val objects = mutableListOf<E>()
-
-//        val clazz = object : TypeToken<E>() {}.rawType
 
         collection.find(filter)
             .iterator()
@@ -160,6 +151,18 @@ class Matcha(
     private lateinit var user: User
     private lateinit var client: MongoClient
 
+    var currentUser: User? = null
+        get() = app.currentUser()
+        private set
+
+    var users: Array<User>? = null
+        get() = app.allUsers().values.toTypedArray()
+        private set
+
+    fun getAllUsers(): MutableMap<String, User>? {
+        return app.allUsers()
+    }
+
     init {
         Realm.init(context)//clicky clack clack cliciki  i click tap love cilimy tzp you
 
@@ -239,7 +242,6 @@ class Matcha(
             realmClass: Class<*>? = null,
             resolver: (Class<*>) -> Class<*>,
         ): Any {
-
             val c = this::class.java
             val realmClass = realmClass ?: resolver(c)
             val obj = realmClass.newInstance()!!
@@ -279,7 +281,7 @@ class Matcha(
                         c.superclass.getDeclaredField(it.name)
                     }
 
-                    r.set(obj, v.realmify(resolver(v::class.java)))
+                    r.set(obj, v.realmify(resolver(v::class.java), resolver))
                 }
             }
 
@@ -330,7 +332,7 @@ class Matcha(
                         c.superclass.getDeclaredField(it.name)
                     }
 
-                    r.set(obj, v.realmify(resolver(v::class.java)))
+                    r.set(obj, v.realmify(resolver(v::class.java), resolver))
                 }
             }
 

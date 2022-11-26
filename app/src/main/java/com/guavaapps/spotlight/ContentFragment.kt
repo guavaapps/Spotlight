@@ -28,8 +28,8 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
 
-class ContentFragment : Fragment () {
-    private val mViewModel: ContentViewModel by viewModels ()
+class ContentFragment : Fragment() {
+    private val mViewModel: ContentViewModel by viewModels() { ContentViewModel.Factory }
 
     private var mPager: ViewPager2? = null
     private var track: FragmentContainerView? = null
@@ -53,7 +53,7 @@ class ContentFragment : Fragment () {
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
+        savedInstanceState: Bundle?,
     ): View? {
         return inflater.inflate(R.layout.fragment_content, container, false)
     }
@@ -121,8 +121,10 @@ class ContentFragment : Fragment () {
             val directions = ContentFragmentDirections.actionContentFragmentToUserFragment()
 
             mUser!!.animate().apply {
-                duration = resources.getInteger(com.google.android.material.R.integer.material_motion_duration_short_1).toLong()
-                alpha( 0f)
+                duration =
+                    resources.getInteger(com.google.android.material.R.integer.material_motion_duration_short_1)
+                        .toLong()
+                alpha(0f)
             }.start()
 
             mNavController!!.navigate(directions, extras)
@@ -152,7 +154,7 @@ class ContentFragment : Fragment () {
                     override fun onPageScrolled(
                         position: Int,
                         positionOffset: Float,
-                        positionOffsetPixels: Int
+                        positionOffsetPixels: Int,
                     ) {
                         super.onPageScrolled(position, positionOffset, positionOffsetPixels)
 

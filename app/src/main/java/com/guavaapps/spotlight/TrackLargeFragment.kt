@@ -26,7 +26,7 @@ import com.spotify.protocol.types.PlayerState
 import java.util.concurrent.ScheduledExecutorService
 
 class TrackLargeFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels()
+    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
 
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private var playerApi: PlayerApi? = null
@@ -75,7 +75,7 @@ class TrackLargeFragment : Fragment() {
             }
         }
 
-        with (mSeekBar) {
+        with(mSeekBar) {
             setOnSeekBarChangeListener(object : OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                     if (fromUser) viewModel.progress.value = progress.toLong()
@@ -143,8 +143,10 @@ class TrackLargeFragment : Fragment() {
         val trackName = SpannableString(track.name + " " + track.artists[0].name)
         val albumTabTitle = SpannableString("From " + track.album.name)
 
-        val primaryAnimator = ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.primary, colorSet.primary)
-        primaryAnimator.duration = resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
+        val primaryAnimator =
+            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.primary, colorSet.primary)
+        primaryAnimator.duration =
+            resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
         primaryAnimator.addUpdateListener { animation: ValueAnimator ->
             mColorSet.primary = animation.animatedValue as Int
 

@@ -1,59 +1,61 @@
 package com.guavaapps.spotlight
 
-import android.app.Application
-import android.content.Context
-import com.guavaapps.components.bitmap.BitmapTools.from
-import com.pixel.spotifyapi.SpotifyService
-import com.spotify.android.appremote.api.SpotifyAppRemote
 import android.os.Looper
-import android.graphics.Bitmap
-import com.spotify.protocol.types.PlayerState
-import com.spotify.protocol.types.Repeat
-import com.google.gson.GsonBuilder
-import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.core.os.HandlerCompat
-import androidx.lifecycle.*
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
-import com.guavaapps.spotlight.realm.*
+import com.guavaapps.components.bitmap.BitmapTools.from
+import com.guavaapps.spotlight.realm.RealmAlbumWrapper
+import com.guavaapps.spotlight.realm.TrackModel
 import com.pixel.spotifyapi.Objects.*
-import io.realm.Realm
+import com.pixel.spotifyapi.SpotifyService
+import com.spotify.android.appremote.api.SpotifyAppRemote
+import com.spotify.protocol.types.PlayerState
+import com.spotify.protocol.types.Repeat
 import io.realm.RealmList
 import io.realm.mongodb.Credentials
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.bson.Document
 import retrofit.Callback
 import retrofit.RetrofitError
 import retrofit.client.Response
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import kotlin.Exception
 
-class ContentViewModel : ViewModel() {
+private const val TAG = "ViewModel"
+
+class ContentViewModel(
+    private var matcha: Matcha,
+    private var userRepository: UserRepository,
+    private var modelRepository: ModelRepository,
+    private var localRealm: LocalRealm,
+) : ViewModel() {
     private val executor = Executors.newSingleThreadExecutor()
     private val uiHandler = HandlerCompat.createAsync(Looper.getMainLooper())
-
-    lateinit var userRepository: UserRepository
-    lateinit var mongoClient: MongoClient
-    lateinit var modelRepository: ModelRepository
-    lateinit var localRealm: LocalRealm
-    lateinit var realm: Realm
 
     private var isWaiting = false
     private var needsTrack = true
     private var needsNextTrack = true
 
     private val tracks: Queue<TrackWrapper?> = LinkedList()
+    private val localTimeline = mutableListOf<TrackModel>()
+    private val tracksBatch = mutableListOf<Track>()
+    private val batch = mutableListOf<TrackModel>()
+    private val currentSession = 0
 
     val spotifyService = MutableLiveData<SpotifyService>()
     val spotifyAppRemote = MutableLiveData<SpotifyAppRemote>()
 
     val user = MutableLiveData<UserWrapper>()
-    lateinit var realmUser: User
 
     val track = MutableLiveData<TrackWrapper?>()
     val progress = MutableLiveData<Long>()
@@ -80,74 +82,53 @@ class ContentViewModel : ViewModel() {
         "valence" to 13
     )
 
-    private var localTimeline = mutableListOf<TrackModel>()
+    fun initForUser(spotifyService: SpotifyService, user: UserPrivate? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val user = user ?: spotifyService.getCurrentUser()
 
-    fun initForUser(
-        context: Context,
-        service: SpotifyService,
-    ) {
-        spotifyService.value = service
+            login(spotifyService, user)
 
-        if (user.value != null) {
-            logOutUser()
+            updateUi(user)
         }
-
-        Realm.init(context)
-
-        spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
-            override fun success(t: UserPrivate?, response: Response?) {
-                executor.execute {
-                    try {
-                        val bitmap = from(t!!.images[0].url)
-
-                        val userId = t.id
-
-                        mongoClient = MongoClient(context)
-                        mongoClient.login(userId)
-
-                        val remoteModelDataSource = RemoteModelDataSource()
-//
-//                        modelRepository = ModelRepository(
-//                            userId,
-//                            mongoClient,
-//                            remoteModelDataSource
-//                        )
-
-                        userRepository = UserRepository(
-                            userId,
-                            mongoClient
-                        )
-
-//                        localRealm = LocalRealm(context)
-//
-//                        localTimeline = getTimeline()
-//
-//                        uiHandler.post {
-//                            user.value = UserWrapper(
-//                                t,
-//                                bitmap
-//                            )
-//
-//                            getNext()
-//                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-
-            override fun failure(error: RetrofitError?) {
-
-            }
-
-        })
     }
 
-    fun pushBatch() {
-//        with(userRepository.get()) {
-//            timeline.addAll(localTimeline)
-//            userRepository.update(this)
-//        }
+    private suspend fun login(spotifyService: SpotifyService, user: UserPrivate) {
+        withContext(Dispatchers.IO) {
+            val userId = user.id
+
+            val credentials = Credentials.customFunction(
+                Document(
+                    mapOf(
+                        "spotify_id" to userId
+                    )
+                )
+            )
+
+            modelRepository.close()
+            matcha.logout()
+
+            matcha.login(credentials)
+            modelRepository.init()
+        }
+    }
+
+    private suspend fun updateUi(user: UserPrivate) {
+        val wrappedUser = UserWrapper()
+        wrappedUser.user = user
+
+        withContext(Dispatchers.IO) {
+            wrappedUser.thumbnail = from(user.images[0].url)
+        }
+
+        withContext(Dispatchers.Main) {
+            this@ContentViewModel.user.value = wrappedUser
+        }
+    }
+
+    private suspend fun pullBatch(): Array<TrackModel> {
+        // pull local
+
+        return emptyArray()
     }
 
     fun logOutUser() {
@@ -155,22 +136,6 @@ class ContentViewModel : ViewModel() {
 //        user.timeline.addAll(localTimeline)
 
 //        userRepository.update(user)
-    }
-
-    fun getUserAsync() {
-        spotifyService.value!!.getCurrentUser(object : Callback<UserPrivate> {
-            override fun success(t: UserPrivate?, response: Response?) {
-                user.value = UserWrapper(
-                    t!!,
-                    from(t.images[0].url)
-                )
-            }
-
-            override fun failure(error: RetrofitError?) {
-                // retry login
-            }
-
-        })
     }
 
     private fun getNextTrackFeatures(): FloatArray {
@@ -185,12 +150,6 @@ class ContentViewModel : ViewModel() {
                 }
             ).first()
         }
-    }
-
-    private fun getTimeline(): RealmList<TrackModel> {
-//        return userRepository.get()
-//            .timeline
-        return RealmList()
     }
 
     private fun createParamsObject(features: FloatArray): Map<String, Any> {
@@ -208,25 +167,6 @@ class ContentViewModel : ViewModel() {
         return mutableMapOf<String, Any>(
 //            "seed_genres" to "hip-hop"
         ).toMap()
-    }
-
-    private var hasRetried = false
-
-    fun loadAlbum() {
-        spotifyService.value!!.getAlbum(track.value!!.track.album.id,
-            object : Callback<Album> {
-                override fun success(t: Album?, response: Response?) {
-                    album.value = AlbumWrapper(
-                        t,
-                        from(t!!.images[0].url)
-                    )
-                }
-
-                override fun failure(error: RetrofitError?) {
-
-                }
-
-            })
     }
 
     fun getNext() {
@@ -319,32 +259,63 @@ class ContentViewModel : ViewModel() {
         }
     }
 
-    fun createModel() {
-        pushBatch()
+    private fun createModel() {
         modelRepository.createModel()
     }
 
-    fun logBatch(tracks: Array<RealmTrack>) {
-        val ids = tracks.map { it.id }
+    fun logTrack(track: Track) {
+        batch.add(TrackModel(
+            track.id,
+            track.uri,
+            System.currentTimeMillis()
+        ))
+    }
 
-        spotifyService.value!!.getTracksAudioFeatures(
-            ids.joinToString(","),
-            object : Callback<AudioFeaturesTracks> {
-                override fun success(t: AudioFeaturesTracks?, response: Response?) {
-                    localTimeline.addAll(t!!.audio_features.mapIndexed { index, track ->
-                        TrackModel().apply {
-                            id = track.id
-                            features = RealmList(*track.extractFeatures().toTypedArray())
-                            timestamp = System.currentTimeMillis()
-                        }
-                    })
-                }
+    private suspend fun pushBatch() {
+        batch.injectFeatures()
 
-                override fun failure(error: RetrofitError?) {
+        withContext(Dispatchers.IO) {
+            with(userRepository.get()) {
+                val session = this.timeline.last()!!
 
-                }
+                if (session.session_id != currentSession) return@with
+
+                session.tracks.addAll(batch)
             }
+        }
+
+        spotifyService.value!!.addTracksToPlaylist(
+            user.value!!.user.id, "playlist_id",
+            mapOf("uris" to batch.map { it.uri }.joinToString(",")), null
         )
+    }
+
+    private fun isBreakaway(): Boolean {
+        return false
+    }
+
+    private suspend fun MutableList<TrackModel>.injectFeatures() {
+        val ids = this.map { it.id }.joinToString(",")
+
+        return withContext(Dispatchers.IO) {
+            spotifyService.value!!.getTracksAudioFeatures(ids)
+                .audio_features
+                .forEach {
+                    this@injectFeatures.find { track -> track.id == it.id }!!
+                        .features = RealmList(*it.extractFeatures().toTypedArray())
+                }
+        }
+    }
+
+    private fun AudioFeaturesTrack.extractFeatures(): FloatArray {
+        val features = Array(featuresMap.size) { i ->
+            val f = featuresMap.filterValues { it == i }.keys.first()
+            AudioFeaturesTrack::class.java
+                .getField(f)
+                .get(this) as Float
+        }
+
+        return features.toFloatArray()
     }
 
     private fun scaleMinMax(data: Array<FloatArray>): Scaler {
@@ -394,28 +365,23 @@ class ContentViewModel : ViewModel() {
         var max: Float,
     )
 
-    private fun AudioFeaturesTrack.extractFeatures(): FloatArray {
-        val features = Array(featuresMap.size) { i ->
-            val f = featuresMap.filterValues { it == i }.keys.first()
-            AudioFeaturesTrack::class.java
-                .getField(f)
-                .get(this) as Float
-        }
+    private var hasRetried = false
 
-        return features.toFloatArray()
-    }
+    fun loadAlbum() {
+        spotifyService.value!!.getAlbum(track.value!!.track.album.id,
+            object : Callback<Album> {
+                override fun success(t: Album?, response: Response?) {
+                    album.value = AlbumWrapper(
+                        t,
+                        from(t!!.images[0].url)
+                    )
+                }
 
-    @Deprecated("Use play (uri) or play ()")
-    fun playD() {
-        val playerApi = spotifyAppRemote.value!!.playerApi
-        val track = track.value!!.track
-        if (playerApi == null || track == null) return
-        startPlayerStateListener()
-        playerApi.playerState
-            .setResultCallback { data: PlayerState ->
-                if (data.track.uri == track.uri) playerApi.resume() else playerApi.play(track.uri)
-                playerApi.setRepeat(Repeat.ONE)
-            }
+                override fun failure(error: RetrofitError?) {
+
+                }
+
+            })
     }
 
     fun play() {
@@ -460,63 +426,16 @@ class ContentViewModel : ViewModel() {
     }
 
     companion object {
-        private const val TAG = "ViewModel"
-
-        private fun cacheAlbumObject(context: Context, wrappedAlbum: AlbumWrapper) {
-            val album = wrappedAlbum.album
-            val bitmap = wrappedAlbum.bitmap
-            wrappedAlbum.album.available_markets = Arrays.asList("")
-            for (trackSimple in wrappedAlbum.album.tracks.items) {
-                trackSimple.available_markets = Arrays.asList("")
-            }
-            try {
-                val albumOutputStream =
-                    FileOutputStream(context.cacheDir.toString() + "/" + album.id + ".album")
-                val outputStream =
-                    FileOutputStream(context.cacheDir.toString() + "/" + album.id + ".jpeg")
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-                outputStream.flush()
-                outputStream.close()
-                val gson = GsonBuilder()
-                    .setPrettyPrinting()
-                    .setLenient()
-                    .create()
-                val s = gson.toJson(album)
-                albumOutputStream.write(s.toByteArray(StandardCharsets.UTF_8))
-                albumOutputStream.flush()
-                albumOutputStream.close()
-            } catch (e: Exception) {
-            }
-        }
-
-        private fun buildAlbumObject(context: Context, id: String): AlbumWrapper? {
-            var wrappedAlbum: AlbumWrapper? = null
-            var album: Album? = null
-            var bitmap: Bitmap? = null
-            try {
-                val albumInputStream =
-                    FileInputStream(context.cacheDir.toString() + "/" + id + ".album")
-                val inputStream = FileInputStream(context.cacheDir.toString() + "/" + id + ".jpeg")
-                bitmap = BitmapFactory.decodeStream(inputStream)
-                val gson = GsonBuilder()
-                    .setPrettyPrinting()
-                    .setLenient()
-                    .create()
-                val bytes = ByteArray(albumInputStream.available())
-                albumInputStream.read(bytes)
-                album = gson.fromJson(String(bytes), Album::class.java)
-            } catch (e: Exception) {
-                return null
-            }
-            wrappedAlbum = AlbumWrapper(album, bitmap)
-            return wrappedAlbum
-        }
-
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
-                val app = extras[APPLICATION_KEY]
+                val app = extras[APPLICATION_KEY] as Ky
 
-                return ContentViewModel() as T
+                return ContentViewModel(
+                    app.matcha,
+                    app.userRepository,
+                    app.modelRepository,
+                    app.localRealm
+                ) as T
             }
         }
     }

@@ -23,11 +23,12 @@ import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModel
 import java.lang.Exception
 import java.util.*
 
 class TrackFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels()
+    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
     private var mInsets: Insets? = null
     private var mTrackLargeContainer: FragmentContainerView? = null
     private var mTrackSmallContainer: FragmentContainerView? = null

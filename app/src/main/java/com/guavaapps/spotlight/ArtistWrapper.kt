@@ -1,18 +1,9 @@
-package com.guavaapps.spotlight;
+package com.guavaapps.spotlight
 
-import android.graphics.Bitmap;
+import android.graphics.Bitmap
+import com.pixel.spotifyapi.Objects.Artist
 
-import com.pixel.spotifyapi.Objects.Artist;
-
-public class ArtistWrapper {
-    public Artist artist;
-    public Bitmap thumbnail;
-
-    public ArtistWrapper () {
-    }
-
-    public ArtistWrapper (Artist artist, Bitmap thumbnail) {
-        this.artist = artist;
-        this.thumbnail = thumbnail;
-    }
-}
+data class ArtistWrapper(
+    var artist: Artist? = null,
+    var thumbnail: Bitmap? = null,
+)

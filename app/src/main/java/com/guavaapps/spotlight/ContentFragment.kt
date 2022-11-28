@@ -10,46 +10,47 @@ import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
-import android.widget.ImageView
 import androidx.core.view.*
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentActivity
-import androidx.fragment.app.FragmentContainerView
-import androidx.fragment.app.viewModels
-import androidx.lifecycle.ViewModelProvider
+import androidx.fragment.app.*
 import androidx.navigation.NavController
 import androidx.navigation.fragment.FragmentNavigatorExtras
 import androidx.navigation.fragment.NavHostFragment
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
+import com.pixel.spotifyapi.Objects.Track
+import android.widget.ImageView as ImageView
+import com.guavaapps.spotlight.UserFragment as UserFragment
+
+private const val TAG = "ContentFragment"
 
 class ContentFragment : Fragment() {
-    private val mViewModel: ContentViewModel by viewModels() { ContentViewModel.Factory }
+    private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
-    private var mPager: ViewPager2? = null
-    private var track: FragmentContainerView? = null
+    private lateinit var pager: ViewPager2
+    private lateinit var track: FragmentContainerView
 
-    private var mUserFragment: UserFragment? = null
-    private var mTrackFragment: TrackFragment? = null
-    private var mExtraFragment: ExtraFragment? = null
+    private lateinit var userFragment: UserFragment
+    private lateinit var trackFragment: TrackFragment
+    private lateinit var extraFragment: ExtraFragment
 
-    private var mSurfaceView: ImageView? = null
-    private var mTempSurfaceView: ImageView? = null
-    private var mSurfaceViewOverlay: View? = null
+    private lateinit var surfaceView: ImageView
+    private lateinit var tempSurfaceView: ImageView
+    private lateinit var surfaceViewOverlay: View
 
-    private var mUser: ImageView? = null
+    private lateinit var userView: ImageView
 
-    private var mColorSet = ColorSet()
+    private var colorSet = ColorSet()
 
-    private var mSurfaceBitmap: Bitmap? = null
+    private var surfaceBitmap: Bitmap? = null
     private val mParent: FragmentContainerView? = null
 
-    private var mNavController: NavController? = null
+    private var navController: NavController? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -61,73 +62,76 @@ class ContentFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        mNavController = NavHostFragment.findNavController(this)
+        navController = NavHostFragment.findNavController(this)
 
-        mPager = view.findViewById(R.id.pager)
-        mPager!!.offscreenPageLimit = 1
+        pager = view.findViewById(R.id.pager)
+        pager.offscreenPageLimit = 1
 
         track = view.findViewById(R.id.track)
 
-        val navHostFragment = requireActivity().supportFragmentManager
-            .findFragmentById(R.id.track) as NavHostFragment?
+        userFragment = UserFragment()
+        extraFragment = ExtraFragment()
+        trackFragment = track.getFragment()
 
-        mUserFragment = UserFragment()
+        surfaceView = view.findViewById(R.id.surface_view)
+        tempSurfaceView = view.findViewById(R.id.temp_surface_view)
 
-        mExtraFragment = ExtraFragment()
+        surfaceViewOverlay = view.findViewById(R.id.surface_view_overlay)
 
-        mTrackFragment = track!!.getFragment<TrackFragment>()
+        userView = view.findViewById(R.id.user)
 
-        mSurfaceView = view.findViewById(R.id.surface_view)
-        mTempSurfaceView = view.findViewById(R.id.temp_surface_view)
-
-        mSurfaceViewOverlay = view.findViewById(R.id.surface_view_overlay)
-
-        mUser = view.findViewById(R.id.user)
-
-        mSurfaceView!!.setRenderEffect(
+        surfaceView.setRenderEffect(
             RenderEffect.createBlurEffect(
                 100f,
                 100f,
                 Shader.TileMode.CLAMP
             )
         )
-        mTempSurfaceView!!.setRenderEffect(
+        tempSurfaceView.setRenderEffect(
             RenderEffect.createBlurEffect(
                 100f,
                 100f,
                 Shader.TileMode.CLAMP
             )
         )
-        mSurfaceView!!.scaleType = ImageView.ScaleType.CENTER_CROP
-        mTempSurfaceView!!.scaleType = ImageView.ScaleType.CENTER_CROP
+        surfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
+        tempSurfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
 
-        mViewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
+        pager.registerOnPageChangeCallback(object : OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+
+                if (position == 1) viewModel.loadAlbum()
+            }
+        })
+
+        viewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
             if (albumWrapper != null) {
                 nextAlbum(albumWrapper)
             } else {
             }
         }
 
-        mViewModel!!.user.observe(viewLifecycleOwner) { userWrapper: UserWrapper? ->
+        viewModel.user.observe(viewLifecycleOwner) { userWrapper: UserWrapper? ->
             if (userWrapper != null) {
-                mUser!!.setImageBitmap(userWrapper.thumbnail)
+                userView.setImageBitmap(userWrapper.bitmap)
             }
         }
 
-        mUser!!.setOnClickListener { v: View? ->
+        userView.setOnClickListener { v: View? ->
             val trans = "trans"
 
             val extras = FragmentNavigatorExtras(v!! to trans)
             val directions = ContentFragmentDirections.actionContentFragmentToUserFragment()
 
-            mUser!!.animate().apply {
+            userView.animate().apply {
                 duration =
                     resources.getInteger(com.google.android.material.R.integer.material_motion_duration_short_1)
                         .toLong()
                 alpha(0f)
             }.start()
 
-            mNavController!!.navigate(directions, extras)
+            navController!!.navigate(directions, extras)
         }
 
         view.viewTreeObserver.addOnGlobalLayoutListener(object : OnGlobalLayoutListener {
@@ -143,13 +147,13 @@ class ContentFragment : Fragment() {
 //                    return WindowInsetsCompat.CONSUMED;
 //                });
 
-                val params = mUser!!.layoutParams as ViewGroup.MarginLayoutParams
+                val params = userView.layoutParams as ViewGroup.MarginLayoutParams
                 params.apply {
                     topMargin = insets.top;
                 }
 
-                mPager!!.adapter = Adapter(requireActivity())
-                mPager!!.registerOnPageChangeCallback(object : OnPageChangeCallback() {
+                pager.adapter = Adapter(requireActivity())
+                pager.registerOnPageChangeCallback(object : OnPageChangeCallback() {
                     private val pOffset = 0f
                     override fun onPageScrolled(
                         position: Int,
@@ -164,7 +168,7 @@ class ContentFragment : Fragment() {
                                     if (positionOffset < 0.5f) positionOffset / 0.5f else 1f
                                 val scale = 1 - rawScale
 
-                                mTrackFragment!!.resize(positionOffset)
+                                trackFragment.resize(positionOffset)
                                 //mUserView.setAlpha (scale);
 
 //                                ArgbEvaluator argbEvaluator = new ArgbEvaluator ();
@@ -177,7 +181,7 @@ class ContentFragment : Fragment() {
 //                                drawable.setOrientation (GradientDrawable.Orientation.TOP_BOTTOM);
 //                                drawable.setColors (new int[] {argb, argb2});
 //                                //mSurfaceViewOverlay.setBackground (drawable);
-                                mSurfaceViewOverlay!!.alpha =
+                                surfaceViewOverlay.alpha =
                                     if (positionOffset > 0.16f) positionOffset else 0.16f
                             } catch (e: Exception) {
                             }
@@ -195,67 +199,69 @@ class ContentFragment : Fragment() {
     }
 
     private fun nextAlbum(wrappedAlbum: AlbumWrapper) {
-        nextTrack(TrackWrapper(null, wrappedAlbum.bitmap))
+        nextTrack(TrackWrapper(Track(), wrappedAlbum.bitmap))
     }
 
     private fun nextTrack(wrappedTrack: TrackWrapper) {
         val bitmap = wrappedTrack.thumbnail
         val colorSet = ColorSet.create(bitmap)
 
-        mSurfaceView!!.scaleType = ImageView.ScaleType.CENTER_CROP
+        Log.e(TAG, "IS THIS NULL AND HOWWWWWW? ${bitmap == null}")
 
-        val temp = mSurfaceView!!.drawable as BitmapDrawable?
+        surfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
+
+        val temp = surfaceView.drawable as BitmapDrawable?
         val b = temp?.bitmap
 
-        mTempSurfaceView!!.setImageBitmap(b)
-        mTempSurfaceView!!.visibility = View.VISIBLE
-        mTempSurfaceView!!.alpha = 1f
+        tempSurfaceView.setImageBitmap(b)
+        tempSurfaceView.visibility = View.VISIBLE
+        tempSurfaceView.alpha = 1f
 
-        mSurfaceView!!.setImageBitmap(bitmap)
+        surfaceView.setImageBitmap(bitmap)
 
-        mTempSurfaceView!!.animate()
+        tempSurfaceView.animate()
             .alpha(0f)
             .setDuration(resources.getInteger(android.R.integer.config_shortAnimTime).toLong())
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     super.onAnimationEnd(animation)
 
-                    mTempSurfaceView!!.visibility = View.GONE
+                    tempSurfaceView.visibility = View.GONE
                 }
             })
             .start()
 
-        mSurfaceBitmap = bitmap
+        surfaceBitmap = bitmap
 
         val drawable = GradientDrawable()
 
         val argbAnimator1 = ValueAnimator.ofObject(
             ArgbEvaluator(),
-            mColorSet.surface[0],
+            this.colorSet.surface[0],
             colorSet.surface[0]
         )
         argbAnimator1.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
         argbAnimator1.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.surface[0] = animation.animatedValue as Int
-            drawable.colors = mColorSet.surface
-            mSurfaceViewOverlay!!.background = drawable
+            this.colorSet.surface[0] = animation.animatedValue as Int
+            drawable.colors = this.colorSet.surface
+            surfaceViewOverlay.background = drawable
         }
         val argbAnimator2 = ValueAnimator.ofObject(
             ArgbEvaluator(),
-            mColorSet.surface[1],
+            this.colorSet.surface[1],
             colorSet.surface[1]
         )
         argbAnimator2.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
         argbAnimator2.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.surface[1] = animation.animatedValue as Int
-            drawable.colors = mColorSet.surface
-            mSurfaceViewOverlay!!.background = drawable
+            this.colorSet.surface[1] = animation.animatedValue as Int
+            drawable.colors = this.colorSet.surface
+            surfaceViewOverlay.background = drawable
         }
         argbAnimator1.start()
         argbAnimator2.start()
-        mColorSet = colorSet
+        this.colorSet = colorSet
     }
 
     private inner class Adapter(fragmentActivity: FragmentActivity) :
@@ -263,7 +269,7 @@ class ContentFragment : Fragment() {
         override fun createFragment(position: Int): Fragment {
             when (position) {
 //                0 -> return Fragment()
-                1 -> return mExtraFragment!!
+                1 -> return extraFragment
             }
             return Fragment() /// fkjdkaaaa aaaaaaaaaaahhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
         }
@@ -271,9 +277,5 @@ class ContentFragment : Fragment() {
         override fun getItemCount(): Int {
             return 2
         }
-    }
-
-    companion object {
-        private const val TAG = "ContentFragment"
     }
 }

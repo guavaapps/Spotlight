@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
 import com.google.android.material.button.MaterialButton
@@ -19,7 +20,7 @@ import com.spotify.android.appremote.api.SpotifyAppRemote
 import com.spotify.protocol.types.PlayerState
 
 class TrackSmallFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
+    private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
     private var isPlaying = false
 
@@ -83,19 +84,19 @@ class TrackSmallFragment : Fragment() {
             }
         }
 
-        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote? ->
-            mSpotifyAppRemote = appRemote
-            mPlayerApi = mSpotifyAppRemote!!.playerApi
-            mPlayerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
-                if (data.track.uri == mTrack!!.track.uri) {
-                    if (data.isPaused) {
-                        mPlayButton.icon = mPlayDrawable
-                    } else {
-                        mPlayButton.icon = mPauseDrawable
-                    }
-                }
-            }
-        }
+//        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote? ->
+//            mSpotifyAppRemote = appRemote
+//            mPlayerApi = mSpotifyAppRemote!!.playerApi
+//            mPlayerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
+//                if (data.track.uri == mTrack!!.track.uri) {
+//                    if (data.isPaused) {
+//                        mPlayButton.icon = mPlayDrawable
+//                    } else {
+//                        mPlayButton.icon = mPauseDrawable
+//                    }
+//                }
+//            }
+//        }
     }
 
     private fun nextTrack(wrappedTrack: TrackWrapper) {

@@ -8,7 +8,7 @@ import io.realm.RealmConfiguration
 import io.realm.RealmObject
 
 class LocalRealm(context: Context) {
-    private val realm: Realm
+    private var realm: Realm? = null
 
     init {
         Realm.init(context)
@@ -17,14 +17,14 @@ class LocalRealm(context: Context) {
             .name("Spotlight")
             .build()
 
-        realm = Realm.getInstance(config)
+//        realm = Realm.getInstance(config)
     }
 
     fun <E : RealmObject> get(
         clazz: Class<E>,
         id: String,
     ): Any? {
-        val realmObject = realm.where(clazz)
+        val realmObject = realm!!.where(clazz)
             .equalTo("_id", id)
             .findFirst()
             ?.derealmify(resolver = ::resolveSpotifyObject)
@@ -33,7 +33,7 @@ class LocalRealm(context: Context) {
     }
 
     fun <E> put(obj: E) {
-        realm.executeTransaction {
+        realm!!.executeTransaction {
             val realmObject = obj!!.realmify(resolver = ::resolveRealm) as RealmObject
 
             it.insertOrUpdate(realmObject)
@@ -41,7 +41,7 @@ class LocalRealm(context: Context) {
     }
 
     fun close() {
-        realm.close()
+        realm!!.close()
     }
 
     private fun resolveRealm(clazz: Class<*>): Class<*> {

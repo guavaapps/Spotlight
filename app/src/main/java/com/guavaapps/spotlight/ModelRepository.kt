@@ -4,20 +4,22 @@ import com.guavaapps.spotlight.realm.Model
 
 class ModelRepository(
     private val matcha: Matcha,
-    private val remoteModelDataSource: RemoteModelDataSource,
+    private val remoteModelDataSource: ModelProvider,
 ) {
     private lateinit var userId: String
 
     lateinit var model: DLSTMPModel
         private set
 
-    private var modelConfig: Model? = null
-    lateinit var modelProvider: Match<Model>
+    private lateinit var modelConfig: Model
+    private lateinit var modelProvider: Match<Model>
 
     fun init() {
         userId = matcha.currentUser!!.customData["spotify_id"] as String
 
-        model = loadModel()
+        val wrappedModel = loadModel()
+
+        model = wrappedModel.model
 
         modelProvider = matcha.where(Model::class.java)
             .equalTo("_id", userId)
@@ -29,19 +31,19 @@ class ModelRepository(
     fun watchModel() {
         modelProvider
             .watch {
-                if (it.timestamp!! > modelConfig!!.timestamp!!) modelConfig = it
+                if (it.timestamp!! > modelConfig.timestamp!!) modelConfig = it
             }
     }
 
     fun close() {
-        modelProvider.stopWatching()
+        if (this::modelProvider.isInitialized) modelProvider.stopWatching()
     }
 
-    fun createModel(): DLSTMPModel {
-        return remoteModelDataSource.createModel(userId)
+    fun optimiseModel(): ModelWrapper {
+        return remoteModelDataSource.getOptimized(userId)
     }
 
-    private fun loadModel(): DLSTMPModel {
-        return remoteModelDataSource.getModel(userId)
+    private fun loadModel(): ModelWrapper {
+        return remoteModelDataSource.get(userId)
     }
 }

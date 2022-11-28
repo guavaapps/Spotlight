@@ -15,19 +15,10 @@ class DLSTMPModel(model: File) {
         interpreter = Interpreter(model)
     }
 
-    fun getNext(timeline: Array<FloatArray>, scaleInput: Boolean = true): FloatArray {
+    fun getNext(timeline: Array<FloatArray>): FloatArray {
         interpreter.allocateTensors()
 
 //        checkInputShape(interpreter, timeline)
-
-        val DEBUG_TIMESTAMP = System.currentTimeMillis()
-
-        Log.d(
-            TAG,
-            "running inference - timestamp=$DEBUG_TIMESTAMP timeline=[${timeline.size} ${timeline.first().size}] inputShape=[${
-                interpreter.getInputTensor(0).shape().joinToString(" ")
-            }]"
-        )
 
         val output = arrayOf(
             FloatArray(timeline.first().size)
@@ -45,16 +36,7 @@ class DLSTMPModel(model: File) {
 
         interpreter.close()
 
-        return invertMinMax(timelineScaler.apply {
-            result = output
-        })[0].also {
-            Log.d(
-                TAG,
-                "result for timeline - size=${timeline.size} features=${timeline.first().size} result=[${
-                    it.joinToString(" ")
-                }]"
-            )
-        }
+        return invertMinMax(timelineScaler.apply { result = output }).first()
     }
 
     private fun checkInputShape(interpreter: Interpreter, timeline: Array<FloatArray>) {
@@ -71,21 +53,17 @@ class DLSTMPModel(model: File) {
         var max = Float.MAX_VALUE
 
         data.forEach { x ->
-            val mn = x.min()
-            val mx = x.max()
-
-            if (mn < min) min = mn
-            if (mx < max) max = mx
+            if (x.min() < min) min = x.min()
+            if (x.max() > max) max = x.max()
         }
 
-        var scaled = Array(data.size) { i ->
-            val d = max - min
+        val d = max - min
 
-            FloatArray(data[i].size) { j ->
-                (data[i][j] - min) / d
-            }
-        }
-
+        val scaled = data.map {
+            it.map {
+                (it - min) / d
+            }.toFloatArray()
+        }.toTypedArray()
 
         return Scaler(
             scaled,
@@ -97,12 +75,11 @@ class DLSTMPModel(model: File) {
     private fun invertMinMax(data: Scaler): Array<FloatArray> {
         val delta = data.max - data.min
 
-        var inverted = Array(data.result.size) { i ->
-
-            FloatArray(data.result[i].size) { j ->
-                data.result[i][j] * delta + data.min
-            }
-        }
+        val inverted = data.result.map {
+            it.map {
+                it * delta + data.min
+            }.toFloatArray()
+        }.toTypedArray()
 
         return inverted
     }

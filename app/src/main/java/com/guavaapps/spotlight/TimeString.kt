@@ -1,86 +1,70 @@
-package com.guavaapps.spotlight;
+package com.guavaapps.spotlight
 
-import androidx.annotation.NonNull;
+import java.util.concurrent.TimeUnit
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+class TimeString(private val millis: Long) {
+    private val components = mutableListOf<String>()
 
-public class TimeString {
-    private long mMilliseconds;
-    private List <String> mComponents = new ArrayList <> ();
-
-    public TimeString (long milliseconds) {
-        mMilliseconds = milliseconds;
+    override fun toString(): String {
+        return components.joinToString("")
     }
 
-    @Deprecated
-    public static String getTimeString (long ms) {
-        return TimeUnit.MILLISECONDS.toMinutes (ms)
-                + ":"
-                + (TimeUnit.MILLISECONDS.toSeconds (ms) - TimeUnit.MINUTES.toSeconds (TimeUnit.MILLISECONDS.toMinutes (ms)));
+    fun separator(s: String) {
+        components.add(s)
     }
 
-    @NonNull
-    @Override
-    public String toString () {
-        return String.join ("", mComponents);
+    fun milliseconds(f: String? = "%d") {
+        val c = (millis
+                - TimeUnit.SECONDS.toMillis(millis))
+        components.add(String.format(f!!, c))
     }
 
-    public static final class Builder {
-        private TimeString mTimeString;
+    fun seconds(f: String? = "%d") {
+        val c = (TimeUnit.MILLISECONDS.toSeconds(millis)
+                - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis)))
+        components.add(String.format(f!!, c))
+    }
 
-        public Builder (long milliseconds) {
-            mTimeString = new TimeString (milliseconds);
+    fun minutes(f: String? = "%d") {
+        val c = (TimeUnit.MILLISECONDS.toMinutes(millis)
+                - TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(millis)))
+        components.add(String.format(f!!, c))
+    }
+
+    class Builder(milliseconds: Long) {
+        private val mTimeString: TimeString
+        fun separator(s: String): Builder {
+            mTimeString.components.add(s)
+            return this
         }
 
-        public Builder separator (String s) {
-            mTimeString.mComponents.add (s);
-
-            return this;
+        fun milliseconds(f: String? = "%d"): Builder {
+            val c = (mTimeString.millis
+                    - TimeUnit.SECONDS.toMillis(mTimeString.millis))
+            mTimeString.components.add(String.format(f!!, c))
+            return this
         }
 
-        public Builder milliseconds () {
-            return milliseconds ("%d");
+        fun seconds(f: String? = "%d"): Builder {
+            val c = (TimeUnit.MILLISECONDS.toSeconds(mTimeString.millis)
+                    - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(mTimeString.millis)))
+            mTimeString.components.add(String.format(f!!, c))
+            return this
         }
 
-        public Builder milliseconds (String f) {
-            long c = mTimeString.mMilliseconds
-                    - TimeUnit.SECONDS.toMillis (mTimeString.mMilliseconds);
-
-            mTimeString.mComponents.add (String.format (f, c));
-
-            return this;
+        fun minutes(f: String? = "%d"): Builder {
+            val c = (TimeUnit.MILLISECONDS.toMinutes(mTimeString.millis)
+                    - TimeUnit.HOURS.toMinutes(TimeUnit.MILLISECONDS.toHours(mTimeString.millis)))
+            mTimeString.components.add(String.format(f!!, c))
+            return this
         }
 
-        public Builder seconds () {
-            return seconds ("%d");
+        fun build(): TimeString {
+            return mTimeString
         }
 
-        public Builder seconds (String f) {
-            long c = (TimeUnit.MILLISECONDS.toSeconds (mTimeString.mMilliseconds)
-                    - TimeUnit.MINUTES.toSeconds (TimeUnit.MILLISECONDS.toMinutes (mTimeString.mMilliseconds)));
-
-            mTimeString.mComponents.add (String.format (f, c));
-
-            return this;
-        }
-
-        public Builder minutes () {
-            return minutes ("%d");
-        }
-
-        public Builder minutes (String f) {
-            long c = TimeUnit.MILLISECONDS.toMinutes (mTimeString.mMilliseconds)
-                    - TimeUnit.HOURS.toMinutes (TimeUnit.MILLISECONDS.toHours (mTimeString.mMilliseconds));
-
-            mTimeString.mComponents.add (String.format (f, c));
-
-            return this;
-        }
-
-        public TimeString build () {
-            return mTimeString;
+        init {
+            mTimeString = TimeString(milliseconds)
         }
     }
 }

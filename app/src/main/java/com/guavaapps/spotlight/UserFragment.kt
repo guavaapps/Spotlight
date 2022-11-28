@@ -114,7 +114,7 @@ class UserFragment : Fragment() {
             }
         })
         viewModel.user.observe(viewLifecycleOwner) { userWrapper ->
-            mUserView.setImageBitmap(userWrapper.thumbnail)
+            mUserView.setImageBitmap(userWrapper.bitmap)
             mUserNameView.setText(userWrapper.user.display_name)
             mSpotifyButton.setOnClickListener(View.OnClickListener { v: View? ->
                 val intent = Intent(Intent.ACTION_VIEW)
@@ -122,44 +122,44 @@ class UserFragment : Fragment() {
                 intent.putExtra(Intent.EXTRA_REFERRER, "android-app://" + requireContext().packageName)
                 startActivity(intent)
             })
-            viewModel.spotifyService.value!!
-                .getCurrentUserPlaylists(object : Callback<Pager<PlaylistSimple>> {
-                    override fun success(
-                        playlistSimplePager: Pager<PlaylistSimple>,
-                        response: Response,
-                    ) {
-                        Executors.newSingleThreadExecutor().execute {
-                            val items: MutableList<View> = ArrayList()
-                            for (playlistSimple in playlistSimplePager.items) {
-                                if (playlistSimple.owner.id != userWrapper.user.id) continue
-                                val bitmap = from(playlistSimple.images[0].url)
-                                val playlistWrapper = PlaylistWrapper(playlistSimple, bitmap)
-                                val v = LayoutInflater.from(context)
-                                    .inflate(R.layout.playlist_item, null, false)
-                                v.layoutParams = ViewGroup.LayoutParams(-1, -2)
-                                val bitmapView = v.findViewById<ImageView>(R.id.bitmap)
-                                val nameView = v.findViewById<TextView>(R.id.name)
-                                bitmapView.setImageBitmap(bitmap)
-                                nameView.text = playlistSimple.name
-                                val d = TypedValue()
-                                context!!.theme.resolveAttribute(android.R.attr.selectableItemBackground,
-                                    d,
-                                    true)
-                                v.foreground = resources.getDrawable(d.resourceId, context!!.theme)
-                                v.setOnClickListener { v1: View? -> }
-                                mPlaylists[playlistWrapper] = v
-                                items.add(v)
-                            }
-                            val views = arrayOfNulls<View>(mPlaylists.size)
-                            mPlaylists.values.toTypedArray()
-                            Handler.createAsync(Looper.getMainLooper())
-                                .post { mPlaylistListView.add(items) }
-                        }
-                    }
-
-                    override fun failure(error: RetrofitError) {}
-                })
-            applyColorSet(userWrapper.thumbnail)
+//            viewModel.spotifyService.value!!
+//                .getCurrentUserPlaylists(object : Callback<Pager<PlaylistSimple>> {
+//                    override fun success(
+//                        playlistSimplePager: Pager<PlaylistSimple>,
+//                        response: Response,
+//                    ) {
+//                        Executors.newSingleThreadExecutor().execute {
+//                            val items: MutableList<View> = ArrayList()
+//                            for (playlistSimple in playlistSimplePager.items) {
+//                                if (playlistSimple.owner.id != userWrapper.user.id) continue
+//                                val bitmap = from(playlistSimple.images[0].url)
+//                                val playlistWrapper = PlaylistWrapper(playlistSimple, bitmap)
+//                                val v = LayoutInflater.from(context)
+//                                    .inflate(R.layout.playlist_item, null, false)
+//                                v.layoutParams = ViewGroup.LayoutParams(-1, -2)
+//                                val bitmapView = v.findViewById<ImageView>(R.id.bitmap)
+//                                val nameView = v.findViewById<TextView>(R.id.name)
+//                                bitmapView.setImageBitmap(bitmap)
+//                                nameView.text = playlistSimple.name
+//                                val d = TypedValue()
+//                                context!!.theme.resolveAttribute(android.R.attr.selectableItemBackground,
+//                                    d,
+//                                    true)
+//                                v.foreground = resources.getDrawable(d.resourceId, context!!.theme)
+//                                v.setOnClickListener { v1: View? -> }
+//                                mPlaylists[playlistWrapper] = v
+//                                items.add(v)
+//                            }
+//                            val views = arrayOfNulls<View>(mPlaylists.size)
+//                            mPlaylists.values.toTypedArray()
+//                            Handler.createAsync(Looper.getMainLooper())
+//                                .post { mPlaylistListView.add(items) }
+//                        }
+//                    }
+//
+//                    override fun failure(error: RetrofitError) {}
+//                })
+            applyColorSet(userWrapper.bitmap!!)
         }
     }
 

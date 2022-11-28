@@ -2,26 +2,31 @@ package com.guavaapps.spotlight
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.reflect.TypeToken
 import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.realmify
 import io.realm.*
 import io.realm.annotations.Ignore
+import io.realm.annotations.RealmClass
 import io.realm.annotations.RealmField
 import io.realm.mongodb.*
 import io.realm.mongodb.mongo.MongoClient
 import io.realm.mongodb.mongo.MongoCollection
 import io.realm.mongodb.mongo.MongoDatabase
-import io.realm.mongodb.mongo.iterable.MongoCursor
 import org.bson.Document
+import java.lang.annotation.Inherited
+import java.lang.annotation.Retention
+import java.lang.annotation.RetentionPolicy
 import java.lang.reflect.ParameterizedType
-import java.util.logging.Logger
-import javax.security.auth.login.LoginException
-import kotlin.reflect.KVisibility
+import java.util.*
 
 private const val TAG = "Matcha"
 private const val MONGODB_ATLAS = "mongodb-atlas"
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(AnnotationTarget.CLASS)
+@Inherited
+annotation class MatchaClass(val name: String = "")
 
 class Match<E : RealmObject>(
     private val collection: MongoCollection<Document>,
@@ -39,7 +44,7 @@ class Match<E : RealmObject>(
     fun findFirst(): E? {
         val obj = collection.findOne(filter).get()
 
-        return if (obj != null) obj.asMatchaObject(clazz) else null
+        return obj?.asMatchaObject(clazz)
     }
 
     fun findFirstAsync(onResult: (E) -> Unit) {
@@ -180,7 +185,10 @@ class Matcha(
     }
 
     fun <E : RealmObject> where(clazz: Class<E>): Match<E> {
-        val collection = mongoDatabase.getCollection(clazz.simpleName)
+//        val name = clazz.getAnnotation(MatchaClass::class.java)?.name ?: clazz.simpleName
+        val name = clazz.getAnnotation(RealmClass::class.java)?.value ?: clazz.simpleName
+
+        val collection = mongoDatabase.getCollection(name)
 
         return Match(collection, clazz)
     }
@@ -201,38 +209,74 @@ class Matcha(
             return matcha
         }
 
+        private fun isPrimitive(clazz: Class<*>) =
+            clazz.isPrimitive || Date::class.java.isAssignableFrom(clazz) || Number::class.java.isAssignableFrom(
+                clazz) || String::class.java.isAssignableFrom(clazz)
+
         fun <E> Document.asMatchaObject(clazz: Class<E>): E {
             val obj = clazz.newInstance() as E
 
-            val allFields = arrayOf(
-                *clazz.fields,
-                *clazz.declaredFields
-            )
+            Log.e(TAG, "document - $this")
 
             clazz.declaredFields.forEach {
-                if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type)) {
-                    it.isAccessible = true
-                    val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
+                it.isAccessible = true
+                val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
+
+                if (isPrimitive(it.type)) {
                     it.set(obj, this.get(fieldName, it.type))
+                } else if (List::class.java.isAssignableFrom(it.type)) {
+                    val fieldClass =
+                        (it.genericType as ParameterizedType).actualTypeArguments.first() as Class<*>
+
+                    Log.e(TAG, "fieldName=$fieldName fieldClass=$fieldClass")
+
+                    if (isPrimitive(fieldClass)) {
+                        val objects = this.get(fieldName) as List<*>
+
+                        it.set(obj, RealmList(*objects.toTypedArray()))
+                    } else {
+                        val objects = this.getList(fieldName, Document::class.java)
+                            .map { o: Document -> o.asMatchaObject(fieldClass) }
+
+                        it.set(obj, RealmList(*objects.toTypedArray()))
+                    }
+                } else {
+                    it.set(obj, this.get(fieldName, Document::class.java).asMatchaObject(it.type))
                 }
             }
 
             return obj
         }
 
-        fun <E : RealmObject> E.fromMatchaObject(): Document {
+        fun Any.fromMatchaObject(): Document {
             val clazz = this::class.java
             val obj = Document()
 
-            clazz.fields.forEach {
+            clazz.declaredFields.forEach {
                 it.isAccessible = true
 
                 if (it.isAnnotationPresent(Ignore::class.java)) return@forEach
 
-                val fieldName = it.getAnnotation(RealmField::class.java)?.name ?: it.name
+                val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
                 val v = it.get(this)
 
-                obj[fieldName] = v
+                if (isPrimitive(it.type)) {
+                    obj[fieldName] = v
+                } else if (List::class.java.isAssignableFrom(it.type)) {
+                    val fieldClass =
+                        (it.genericType as ParameterizedType).actualTypeArguments.first() as Class<*>
+
+                    if (isPrimitive(fieldClass)) {
+                        val objects = (v as List<*>)
+                        obj[fieldName] = objects
+                    }
+                    else {
+                        val objects = (v as List<*>).map { it?.fromMatchaObject() }
+                        obj[fieldName] = objects
+                    }
+                } else {
+                    it.set(obj, v?.fromMatchaObject())
+                }
             }
 
             return obj

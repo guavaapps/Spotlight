@@ -1,15 +1,7 @@
 package com.guavaapps.spotlight
 
 import android.app.Application
-import android.util.Log
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.guavaapps.spotlight.Matcha.Companion.realmify
 import io.realm.Realm
-import io.realm.RealmConfiguration
-import io.realm.mongodb.Credentials
-import org.bson.Document
-import org.bson.types.ObjectId
 
 private const val APP = "spotlight-gnmnp"
 private const val APP_NAME = "Spotlight"
@@ -34,7 +26,7 @@ class Ky : Application() {
         Realm.init(applicationContext)
         matcha = Matcha.init(applicationContext, APP, APP_NAME)
 
-        val remoteModelDataSource = RemoteModelDataSource()
+        val remoteModelDataSource = ModelProvider()
 
         modelRepository = ModelRepository(
             matcha,

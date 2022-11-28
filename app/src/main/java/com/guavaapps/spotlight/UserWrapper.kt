@@ -1,18 +1,9 @@
-package com.guavaapps.spotlight;
+package com.guavaapps.spotlight
 
-import android.graphics.Bitmap;
+import com.pixel.spotifyapi.Objects.UserPrivate
+import android.graphics.Bitmap
 
-import com.pixel.spotifyapi.Objects.UserPrivate;
-
-public class UserWrapper {
-    public UserPrivate user;
-    public Bitmap thumbnail;
-
-    public UserWrapper () {
-    }
-
-    public UserWrapper (UserPrivate user, Bitmap thumbnail) {
-        this.user = user;
-        this.thumbnail = thumbnail;
-    }
-}
+class UserWrapper(
+    var user: UserPrivate,
+    var bitmap: Bitmap? = null,
+)

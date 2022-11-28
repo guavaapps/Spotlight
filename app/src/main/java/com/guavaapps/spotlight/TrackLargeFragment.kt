@@ -16,6 +16,7 @@ import android.widget.SeekBar.OnSeekBarChangeListener
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatSeekBar
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
 import com.google.android.material.button.MaterialButton
@@ -26,7 +27,7 @@ import com.spotify.protocol.types.PlayerState
 import java.util.concurrent.ScheduledExecutorService
 
 class TrackLargeFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
+    private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
     private var spotifyAppRemote: SpotifyAppRemote? = null
     private var playerApi: PlayerApi? = null
@@ -84,9 +85,9 @@ class TrackLargeFragment : Fragment() {
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
 
                 override fun onStopTrackingTouch(seekBar: SeekBar) {
-                    viewModel.spotifyAppRemote.value!!
-                        .playerApi
-                        .seekTo(mProgress)
+//                    viewModel.spotifyAppRemote.value!!
+//                        .playerApi
+//                        .seekTo(mProgress)
                 }
             })
         }
@@ -105,19 +106,19 @@ class TrackLargeFragment : Fragment() {
 //        })
 
         //
-        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote ->
-            spotifyAppRemote = appRemote
-            playerApi = appRemote.playerApi
-            playerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
-                if (data.track.uri == mTrack!!.track.uri) {
-                    if (data.isPaused) {
-                        mPlayButton!!.setIcon(mPlayDrawable)
-                    } else {
-                        mPlayButton!!.setIcon(mPauseDrawable)
-                    }
-                }
-            }
-        }
+//        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote ->
+//            spotifyAppRemote = appRemote
+//            playerApi = appRemote.playerApi
+//            playerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
+//                if (data.track.uri == mTrack!!.track.uri) {
+//                    if (data.isPaused) {
+//                        mPlayButton!!.setIcon(mPlayDrawable)
+//                    } else {
+//                        mPlayButton!!.setIcon(mPauseDrawable)
+//                    }
+//                }
+//            }
+//        }
 
         viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
             if (trackWrapper != null) {

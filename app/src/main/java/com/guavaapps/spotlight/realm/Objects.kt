@@ -2,6 +2,7 @@ package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
 import com.guavaapps.spotlight.Matcha.Companion.derealmify
+import com.guavaapps.spotlight.MatchaClass
 import io.realm.RealmAny
 import io.realm.RealmDictionary
 import io.realm.RealmList
@@ -14,13 +15,8 @@ import java.util.*
 @RealmModule(classes = [AppUser::class, Model::class, TrackModel::class, ModelParam::class])
 open class RealmObjectsModule
 
-//open class AppUser(
-//    @PrimaryKey
-//    var _id: String = "",
-//    var spotify_id: String = "",
-//    var created: Date = Date()
-//) : RealmObject()
-
+@MatchaClass ("User")
+@RealmClass ("User")
 open class AppUser(
     @PrimaryKey
     @RealmField("_id")
@@ -28,7 +24,7 @@ open class AppUser(
     var date_signed_up: Date? = null,
     var last_login: Date? = null,
     var locale: String? = null,
-    var timeline: RealmList<Session> = RealmList(),
+    var timeline: RealmList<TrackModel> = RealmList(),
 ) : RealmObject()
 
 //class TimelineTrack(
@@ -44,6 +40,7 @@ open class Model(
 //    @Required
     @RealmField("_id")
     var spotify_id: String = "",
+    var version: String = "",
     var timestamp: Long? = null,
     var model_params: RealmList<ModelParam> = RealmList(),
 ) : RealmObject() {}
@@ -276,10 +273,4 @@ open class TrackModel(
     var timestamp: Long? = null,
     @Required
     var features: RealmList<Float> = RealmList(),
-) : RealmObject()
-
-open class Session(
-    @PrimaryKey
-    var session_id: Int? = null,
-    var tracks: RealmList<TrackModel> = RealmList(),
 ) : RealmObject()

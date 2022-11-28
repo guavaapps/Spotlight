@@ -2,7 +2,6 @@ package com.guavaapps.spotlight
 
 import android.animation.Animator
 import com.guavaapps.components.Components.getPx
-import androidx.fragment.app.FragmentContainerView
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -10,42 +9,36 @@ import android.view.View.OnLayoutChangeListener
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.lifecycle.ViewModelProvider
 import android.graphics.drawable.ColorDrawable
 import android.animation.ValueAnimator
 import android.view.MotionEvent
 import android.animation.ValueAnimator.AnimatorUpdateListener
 import android.animation.AnimatorListenerAdapter
 import android.graphics.Color
+import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModel
 import java.lang.Exception
 import java.util.*
+import androidx.fragment.app.FragmentContainerView as FragmentContainerView
 
 class TrackFragment : Fragment() {
-    private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
-    private var mInsets: Insets? = null
-    private var mTrackLargeContainer: FragmentContainerView? = null
-    private var mTrackSmallContainer: FragmentContainerView? = null
-    private var mTrackViewSize = 0
-    private val mTracks: Queue<TrackWrapper> = LinkedList()
+    private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
+    private var insets: Insets? = null
+    private lateinit var trackLargeContainer: FragmentContainerView
+    private lateinit var trackSmallContainer: FragmentContainerView
+    private var trackViewSize = 0
 
-    //    private ImageView mUserView;
-    private var mTrackView: ImageView? = null
-    private var mNextTrackView: ImageView? = null
-    private var mPlaylistView: ImageView? = null
-    private var mHasTrack = true
-    private var mOnTouchListener: OnTouchListener? = null
-    private val mTrackLargeFragment = TrackLargeFragment()
-    private val mTrackSmallFragment = TrackSmallFragment()
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-    }
+    private lateinit var trackView: ImageView
+    private lateinit var nextTrackView: ImageView
+    private lateinit var playlistView: ImageView
+    private var hasTrack = true
+    private var onTouchListener: OnTouchListener? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -57,11 +50,11 @@ class TrackFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        mTrackLargeContainer = view.findViewById(R.id.track_large_container)
-        mTrackSmallContainer = view.findViewById(R.id.track_small_container)
-        mTrackView = view.findViewById(R.id.track_view)
-        mNextTrackView = view.findViewById(R.id.next_track_view)
-        mPlaylistView = view.findViewById(R.id.playlist_view)
+        trackLargeContainer = view.findViewById(R.id.track_large_container)
+        trackSmallContainer = view.findViewById(R.id.track_small_container)
+        trackView = view.findViewById(R.id.track_view)
+        nextTrackView = view.findViewById(R.id.next_track_view)
+        playlistView = view.findViewById(R.id.playlist_view)
 
         view.addOnLayoutChangeListener(object : OnLayoutChangeListener {
             override fun onLayoutChange(
@@ -77,55 +70,32 @@ class TrackFragment : Fragment() {
             ) {
                 val viewWidth = view.width
                 val viewHeight = view.height
+
                 ViewCompat.setOnApplyWindowInsetsListener(view) { v: View?, windowInsetsCompat: WindowInsetsCompat ->
-                    mInsets = windowInsetsCompat.getInsets(WindowInsetsCompat.Type.systemBars())
+                    insets = windowInsetsCompat.getInsets(WindowInsetsCompat.Type.systemBars())
+
                     initViews(viewWidth, viewHeight)
+
                     ViewCompat.setOnApplyWindowInsetsListener(v!!, null)
                     WindowInsetsCompat.CONSUMED
                 }
+
                 view.removeOnLayoutChangeListener(this)
             }
         })
     }
 
-    override fun onResume() {
-        super.onResume()
-    }
-
     fun initViews(viewWidth: Int, viewHeight: Int) {
-//        mPeekViewWidth = mPeekView.getWidth ();
-//        mPeekViewHeight = mPeekView.getHeight ();
-
-//        int rawSize = 2 * (viewHeight / 2 - mPeekViewHeight
-//                - Components.INSTANCE.getPx (getContext (), 48) // padding
-//                - mInsets.bottom);
         val rawSize = 100000
-        mTrackViewSize =
+
+        trackViewSize =
             if (rawSize < getPx(requireContext(), MAX_TRACK_VIEW_SIZE_DP)) rawSize else getPx(
                 requireContext(), MAX_TRACK_VIEW_SIZE_DP)
 
-//        mPeekViewSmallWidth = viewWidth - Components.INSTANCE.getPx (getContext (), 128) - Components.INSTANCE.getPx (getContext (), 48);
-
-//        mUserView.setX (viewWidth - mUserView.getWidth () - Components.INSTANCE.getPx (getContext (), 24));
-//        mUserView.setY (Components.INSTANCE.getPx (getContext (), 24) + mInsets.top);
-//        mUserView.setOnClickListener (v -> {
-//
-//        });
-//        mUserView.setOutlineProvider (new ViewOutlineProvider () {
-//            @Override
-//            public void getOutline (View view, Outline outline) {
-//                mUserView.setClipToOutline (true);
-//                outline.setOval (0,
-//                        0,
-//                        view.getWidth (),
-//                        view.getHeight ()
-//                );
-//            }
-//        });
-        mTrackView!!.layoutParams = ConstraintLayout.LayoutParams(mTrackViewSize, mTrackViewSize)
-        mNextTrackView!!.layoutParams =
-            ConstraintLayout.LayoutParams(mTrackViewSize, mTrackViewSize)
-        mTrackSmallContainer!!.layoutParams = ConstraintLayout.LayoutParams(
+        trackView.layoutParams = ConstraintLayout.LayoutParams(trackViewSize, trackViewSize)
+        nextTrackView.layoutParams =
+            ConstraintLayout.LayoutParams(trackViewSize, trackViewSize)
+        trackSmallContainer.layoutParams = ConstraintLayout.LayoutParams(
             viewWidth - getPx(requireContext(), 128 + 48 + 24),
             -2
         )
@@ -149,87 +119,88 @@ class TrackFragment : Fragment() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        mTrackSmallContainer!!.x = getPx(requireContext(), 128 + 48).toFloat()
-        val y = (getPx(requireContext(), 128) - mTrackSmallContainer!!.height) / 2 + mInsets!!.top
-        mTrackSmallContainer!!.y = y.toFloat()
-        mTrackView!!.x = (viewWidth / 2 - mTrackViewSize / 2).toFloat()
-        mTrackView!!.y = (viewHeight / 2 - mTrackViewSize / 2).toFloat()
-        mOnTouchListener = OnTouchListener(viewWidth, viewHeight, mNextTrackView!!)
-        mTrackView!!.setOnTouchListener(mOnTouchListener)
-        mNextTrackView!!.x = (viewWidth / 2 - mTrackViewSize / 2).toFloat()
-        mNextTrackView!!.y = (viewHeight / 2 - mTrackViewSize / 2).toFloat()
-        mNextTrackView!!.scaleX = 0.5f
-        mNextTrackView!!.scaleY = 0.5f
-        mNextTrackView!!.alpha = 0.5f
+        trackSmallContainer!!.x = getPx(requireContext(), 128 + 48).toFloat()
+        val y = (getPx(requireContext(), 128) - trackSmallContainer!!.height) / 2 + insets!!.top
+        trackSmallContainer!!.y = y.toFloat()
+        trackView!!.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
+        trackView!!.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
+        onTouchListener = OnTouchListener(viewWidth, viewHeight, nextTrackView!!)
+        trackView!!.setOnTouchListener(onTouchListener)
+        nextTrackView!!.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
+        nextTrackView!!.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
+        nextTrackView!!.scaleX = 0.5f
+        nextTrackView!!.scaleY = 0.5f
+        nextTrackView!!.alpha = 0.5f
         viewModel.user.observe(viewLifecycleOwner) { userWrapper -> }
-        viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
+        viewModel.getTrack().observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
+            Log.e(TAG, "track observer - ${trackWrapper != null}")
             if (trackWrapper != null) {
-                mTrackView!!.setImageBitmap(trackWrapper.thumbnail)
-                //nextTrack (trackWrapper);
-                mHasTrack = true
+                trackView!!.setImageBitmap(trackWrapper.thumbnail)
+//                nextTrack (trackWrapper);
+                hasTrack = true
             } else {
                 val drawable = ColorDrawable()
                 drawable.color = Color.MAGENTA
-                mTrackView!!.setImageDrawable(drawable)
-                mHasTrack = false
+                trackView!!.setImageDrawable(drawable)
+                hasTrack = false
             }
         }
         viewModel!!.nextTrack.observe(viewLifecycleOwner, Observer { trackWrapper: TrackWrapper? ->
             if (trackWrapper != null) {
-                mNextTrackView!!.setImageBitmap(trackWrapper.thumbnail)
+                nextTrackView!!.setImageBitmap(trackWrapper.thumbnail)
             } else {
                 val drawable = ColorDrawable()
                 drawable.color = Color.MAGENTA
-                mTrackView!!.setImageDrawable(drawable)
+                trackView!!.setImageDrawable(drawable)
             }
         })
     }
 
     fun resizeX(offset: Float) {
-        val startX = (requireView().width / 2 - mTrackView!!.width / 2).toFloat()
+        val startX = (requireView().width / 2 - trackView!!.width / 2).toFloat()
         val endX = getPx(requireContext(), 24).toFloat()
         val d = endX - startX
         val p = offset * d
         val newX = startX + p
-        mTrackView!!.x = newX
+        trackView!!.x = newX
     }
 
     fun resizeY(offset: Float) {
-        val startY = (requireView().height / 2 - mTrackView!!.height / 2).toFloat()
-        val endY = (getPx(requireContext(), 24) + mInsets!!.top).toFloat()
+        val startY = (requireView().height / 2 - trackView!!.height / 2).toFloat()
+        val endY = (getPx(requireContext(), 24) + insets!!.top).toFloat()
         val d = endY - startY
         val p = offset * d
         val newY = startY + p
-        mTrackView!!.y = newY
+        trackView!!.y = newY
     }
 
     fun resizeScale(offset: Float) {
-        val start = mTrackViewSize.toFloat()
+        val start = trackViewSize.toFloat()
         val end = getPx(requireContext(), 128).toFloat()
         val d = end - start
         val p = offset * d
         val newSize = (start + p).toInt()
-        val params = mTrackView!!.layoutParams
+        val params = trackView!!.layoutParams
         params.width = newSize
         params.height = newSize
-        mTrackView!!.layoutParams = params
+        trackView!!.layoutParams = params
     }
 
     fun alphaSmall(offset: Float) {
-        if (offset >= 0.5f) mTrackSmallContainer!!.visibility =
-            View.VISIBLE else mTrackSmallContainer!!.visibility = View.GONE
+        if (offset >= 0.5f) trackSmallContainer!!.visibility =
+            View.VISIBLE else trackSmallContainer!!.visibility = View.GONE
         val start = 0f
         val end = 1f
         val d = end - start
         val o: Float = if (offset >= 0.5f) (offset - 0.5f) / 0.5f else 0f
         val p = o * d
         val newSize = start + p
-        mTrackSmallContainer!!.alpha = newSize
+        trackSmallContainer!!.alpha = newSize
     }
 
     fun alphaLarge(offset: Float) {
-        if (offset <= 0.5f) mTrackLargeContainer!!.visibility =
-            View.VISIBLE else mTrackLargeContainer!!.visibility = View.GONE
+        if (offset <= 0.5f) trackLargeContainer!!.visibility =
+            View.VISIBLE else trackLargeContainer!!.visibility = View.GONE
         val start = 1f
         val end = 0f
         val d = end - start
@@ -238,12 +209,12 @@ class TrackFragment : Fragment() {
         val p2 = o * d
         val newSize1 = start + p1
         val newSize2 = start + p2
-        mTrackLargeContainer!!.alpha = newSize2
+        trackLargeContainer!!.alpha = newSize2
     }
 
     fun resize(offset: Float) {
-        if (offset == 0f) mNextTrackView!!.visibility =
-            View.VISIBLE else mNextTrackView!!.visibility = View.GONE
+        if (offset == 0f) nextTrackView!!.visibility =
+            View.VISIBLE else nextTrackView!!.visibility = View.GONE
         resizeX(offset)
         resizeY(offset)
         resizeScale(offset)
@@ -251,18 +222,12 @@ class TrackFragment : Fragment() {
         alphaLarge(offset)
     }
 
-    override fun onPause() {
-        super.onPause()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-    }
-
     private val isWaiting = false
 
     // media
-    fun setTrack(wrappedTrack: TrackWrapper?) {}
+    fun setTrack(wrappedTrack: TrackWrapper?) {
+
+    }
 
     //    private ColorSet createColorSet (Bitmap bitmap) {
     //        ColorSet colorSet = new ColorSet ();
@@ -336,7 +301,7 @@ class TrackFragment : Fragment() {
             if (event.action == MotionEvent.ACTION_MOVE) {
                 mSy = (event.rawY - mTy) / mViewHeight * mMaxSy
                 mSx = (event.rawX - mTx) / mViewHeight * mMaxSy
-                if (mHasTrack) {
+                if (hasTrack) {
                     mPx =
                         mViewWidth - (v.x + v.width / 2 - mViewWidth / 2) / mViewWidth / 2 * getPx(
                             requireContext(), 256)
@@ -376,7 +341,7 @@ class TrackFragment : Fragment() {
                         mX = mDismissBound - v.width / 2 + mIx
                     }
                 }
-                mX = if (mHasTrack) mX else mViewWidth / 2 - v.width / 2 + mSx
+                mX = if (hasTrack) mX else mViewWidth / 2 - v.width / 2 + mSx
                 v.x = mX
                 mY = mViewHeight / 2 - v.height / 2 + mSy
                 v.y = mY
@@ -384,14 +349,14 @@ class TrackFragment : Fragment() {
                 mNextTrackView.scaleX = 0.5f + s
                 mNextTrackView.scaleY = 0.5f + s
                 mNextTrackView.alpha = 0.5f + s
-                mPlaylistView!!.x = mPx
+                playlistView!!.x = mPx
             }
             if (event.action == MotionEvent.ACTION_UP) {
 //                mParent.setUserInputEnabled (true);
                 v.parent.requestDisallowInterceptTouchEvent(false)
                 reset(v)
                 resize(v, 1f)
-                if (mHasTrack) {
+                if (hasTrack) {
                     if (event.rawX + mDx + v.width / 2 >= mPeekBound) {
                         deflateTrack(v)
                     }
@@ -415,7 +380,7 @@ class TrackFragment : Fragment() {
                 mPx = mViewWidth - (mX + v.width / 2 - mViewWidth / 2) / mViewWidth / 2 * getPx(
                     requireContext(), 256)
                 v.x = mX
-                mPlaylistView!!.x = mPx
+                playlistView!!.x = mPx
             })
             if (mYAnimator != null && mYAnimator!!.isRunning) mYAnimator!!.cancel()
             mYAnimator = ValueAnimator.ofFloat(mY, newY.toFloat())
@@ -469,14 +434,14 @@ class TrackFragment : Fragment() {
             mNextRxAnimator!!.addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     super.onAnimationEnd(animation)
-                    val newX = view!!.width / 2 - mTrackView!!.width / 2
-                    val newY = view!!.height / 2 - mTrackView!!.height / 2
+                    val newX = view!!.width / 2 - trackView!!.width / 2
+                    val newY = view!!.height / 2 - trackView!!.height / 2
                     viewModel.getNext()
-                    mTrackView!!.x = newX.toFloat()
-                    mTrackView!!.y = newY.toFloat()
-                    mTrackView!!.scaleX = 1f
-                    mTrackView!!.scaleY = 1f
-                    mTrackView!!.alpha = 1f
+                    trackView!!.x = newX.toFloat()
+                    trackView!!.y = newY.toFloat()
+                    trackView!!.scaleX = 1f
+                    trackView!!.scaleY = 1f
+                    trackView!!.alpha = 1f
                 }
             })
             mNextRxAnimator!!.start()
@@ -513,7 +478,7 @@ class TrackFragment : Fragment() {
             4 * resources.getInteger(com.google.android.material.R.integer.material_motion_duration_long_2)
         private val d = (`in` + out + wait).toLong()
         private fun pulse() {
-            pulseOut(mTrackView)
+            pulseOut(trackView)
         }
 
         private fun cancelImpedingPulseEvents() {

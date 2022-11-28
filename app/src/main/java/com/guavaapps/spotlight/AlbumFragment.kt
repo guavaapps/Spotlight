@@ -1,160 +1,144 @@
-package com.guavaapps.spotlight;
+package com.guavaapps.spotlight
 
-import android.content.res.TypedArray;
-import android.graphics.drawable.Drawable;
-import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.TextView;
+import com.guavaapps.spotlight.ColorSet.Companion.create
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.os.Bundle
+import android.widget.TextView
+import com.pixel.spotifyapi.Objects.TrackSimple
+import android.view.View
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
+import com.guavaapps.components.listview.ListView
+import java.util.ArrayList
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.fragment.app.Fragment;
-import androidx.lifecycle.ViewModelProvider;
+class AlbumFragment : Fragment() {
+    private val viewModel: ContentViewModel by activityViewModels{ ContentViewModel.Factory }
 
-import com.guavaapps.components.listview.ListView;
-import com.pixel.spotifyapi.Objects.ArtistSimple;
-import com.pixel.spotifyapi.Objects.TrackSimple;
+    var album: AlbumWrapper? = null
+        private set
 
-import java.util.ArrayList;
-import java.util.List;
+    private val items: MutableList<View> = ArrayList()
+    private val ids: MutableList<String?> = ArrayList()
 
-public class AlbumFragment extends Fragment {
-    private static final String TAG = "AlbumFragment";
+    private var id: String? = null
 
-    private ContentViewModel mViewModel;
+    private lateinit var nestedScrollableHost: NestedScrollableHost
+    private lateinit var listView: ListView
 
-    private AlbumWrapper mAlbum;
-    private List <View> mItems = new ArrayList <> ();
-    private List <String> mIds = new ArrayList <> ();
+    private lateinit var colorSet: ColorSet
 
-    private NestedScrollableHost mNestedScrollableHost;
+    private var listener: Listener? = null
 
-    private ListView mListView;
-
-    private String mId;
-    private Listener mListener;
-    private ColorSet mColorSet;
-
-    public AlbumFragment () {
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View? {
+        return inflater.inflate(R.layout.fragment_album, container, false)
     }
 
-    @Nullable
-    @Override
-    public View onCreateView (@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        return inflater.inflate (R.layout.fragment_album, container, false);
-    }
-
-    @Override
-    public void onViewCreated (@NonNull View view, @Nullable Bundle savedInstanceState) {
-        super.onViewCreated (view, savedInstanceState);
-
-        mViewModel = new ViewModelProvider (requireActivity ()).get (ContentViewModel.class);
-
-        mNestedScrollableHost = view.findViewById (R.id.host);
-        mNestedScrollableHost.post (() -> mNestedScrollableHost.init (getContext (), R.id.pager));//pager2));
-        mListView = view.findViewById (R.id.list_view);
-
-        mViewModel.getAlbum ().observe (getViewLifecycleOwner (), albumWrapper -> {
-            String track = mViewModel.getTrack ().getValue ().track.id;
-
-            setAlbum (albumWrapper, track);
-        });
-    }
-
-    private void setCurrentTrack (String id) {
-        int i = mIds.indexOf (mId);
-        int j = mIds.indexOf (id);
-
-        mId = id;
-
-        if (i != -1) {
-            View v1 = mItems.get (i);
-            TextView titleView1 = v1.findViewById (R.id.title_view);
-            TextView titleView2 = v1.findViewById (R.id.duration_view);
-            titleView1.setTextColor (mColorSet.getSecondary ());
-            titleView2.setTextColor (mColorSet.getSecondary ());
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        nestedScrollableHost = view.findViewById(R.id.host)
+        nestedScrollableHost.post {
+            nestedScrollableHost.init(context,
+                R.id.pager)
+        } //pager2));
+        listView = view.findViewById(R.id.list_view)
+        viewModel.album.observe(viewLifecycleOwner) { albumWrapper ->
+            val track = viewModel.track.value!!.track.id
+            setAlbum(albumWrapper!!, track)
         }
-
-        View v2 = mItems.get (j);
-        TextView titleView2 = v2.findViewById (R.id.title_view);
-        TextView titleView3 = v2.findViewById (R.id.duration_view);
-        titleView2.setTextColor (mColorSet.getPrimary ());
-        titleView3.setTextColor (mColorSet.getPrimary ());
-
-        mListView.scrollToPosition (j);
     }
 
-    public void setAlbum (AlbumWrapper album, String id) {
-        mAlbum = album;
+    private fun setCurrentTrack(id: String) {
+        val i = ids.indexOf(id)
+        val j = ids.indexOf(id)
+        this.id = id
+        if (i != -1) {
+            val v1 = items[i]
+            val titleView1 = v1.findViewById<TextView>(R.id.title_view)
+            val titleView2 = v1.findViewById<TextView>(R.id.duration_view)
+            titleView1.setTextColor(colorSet!!.secondary)
+            titleView2.setTextColor(colorSet!!.secondary)
+        }
+        val v2 = items[j]
+        val titleView2 = v2.findViewById<TextView>(R.id.title_view)
+        val titleView3 = v2.findViewById<TextView>(R.id.duration_view)
+        titleView2.setTextColor(colorSet!!.primary)
+        titleView3.setTextColor(colorSet!!.primary)
+        listView!!.scrollToPosition(j)
+    }
 
-        mColorSet = ColorSet.Companion.create (album.bitmap);
-
-        mIds.clear ();
-        mItems.clear ();
-        mListView.clear ();
-
-        for (TrackSimple track : mAlbum.album.tracks.items) {
-            mIds.add (track.id);
-
-            View item = LayoutInflater.from (getContext ()).inflate (R.layout.album_view_item, null, false);
-            item.setLayoutParams (new ViewGroup.LayoutParams (-1, -2));
-            TypedArray typedArray = getContext ().getTheme ().obtainStyledAttributes (android.R.style.Theme_Material_NoActionBar, new int[] {android.R.attr.selectableItemBackground});
-            Drawable ripple = getResources ().getDrawable (typedArray.getResourceId (0, 0), getContext ().getTheme ()).mutate ();
-            ripple.setTint (mColorSet.getRipple ());
-            item.setBackground (ripple);
-            item.setClickable (true);
-            item.setOnClickListener ((v -> {
-                if (mListener != null) {
-                    mListener.onClick (track);
-                    setCurrentTrack (track.id);
+    fun setAlbum(album: AlbumWrapper, id: String) {
+        this.album = album
+        colorSet = create(album.bitmap)
+        ids.clear()
+        items.clear()
+        listView!!.clear()
+        for (track in album.album!!.tracks.items) {
+            ids.add(track.id)
+            val item = LayoutInflater.from(context).inflate(R.layout.album_view_item, null, false)
+            item.layoutParams = ViewGroup.LayoutParams(-1, -2)
+            val typedArray =
+                requireContext().theme.obtainStyledAttributes(android.R.style.Theme_Material_NoActionBar,
+                    intArrayOf(android.R.attr.selectableItemBackground))
+            val ripple =
+                resources.getDrawable(typedArray.getResourceId(0, 0), requireContext().theme)
+                    .mutate()
+            ripple.setTint(colorSet!!.ripple)
+            item.background = ripple
+            item.isClickable = true
+            item.setOnClickListener { v: View? ->
+                if (listener != null) {
+                    listener!!.onClick(track)
+                    setCurrentTrack(track.id)
                 }
-            }));
-            TextView titleView = item.findViewById (R.id.title_view);
-            TextView artistsView = item.findViewById (R.id.artists_view);
-            TextView durationView = item.findViewById (R.id.duration_view);
+            }
+            val titleView = item.findViewById<TextView>(R.id.title_view)
+            val artistsView = item.findViewById<TextView>(R.id.artists_view)
+            val durationView = item.findViewById<TextView>(R.id.duration_view)
+            titleView.text = track.name
+//            val duration = TimeString.Builder(track.duration_ms)
+//                .minutes()
+//                .separator(":")
+//                .seconds("%02d")
+//                .build()
+//                .toString()
 
-            titleView.setText (track.name);
+            val duration = TimeString(track.duration_ms).apply {
+                minutes()
+                separator(":")
+                seconds("%02d")
+            }.toString()
 
-            String duration = new TimeString.Builder (track.duration_ms)
-                    .minutes ()
-                    .separator (":")
-                    .seconds ("%02d")
-                    .build ()
-                    .toString ();
-
-            durationView.setText (duration);
-
-            List <String> artists = new ArrayList <> ();
-
-            for (ArtistSimple artist : track.artists) {
-                artists.add (artist.name);
+            durationView.text = duration
+            val artists: MutableList<String> = ArrayList()
+            for (artist in track.artists) {
+                artists.add(artist.name)
             }
 
-            artistsView.setText (String.join (", ", artists));
-
-            titleView.setTextColor (mColorSet.getSecondary ());
-            artistsView.setTextColor (mColorSet.getSecondary ());
-            durationView.setTextColor (mColorSet.getSecondary ());
-
-            mItems.add (item);
+            artistsView.text = java.lang.String.join(", ", artists)
+            titleView.setTextColor(colorSet!!.secondary)
+            artistsView.setTextColor(colorSet!!.secondary)
+            durationView.setTextColor(colorSet!!.secondary)
+            items.add(item)
         }
-
-        mListView.add (mItems);
-
-        setCurrentTrack (id);
+        listView!!.add(items)
+        setCurrentTrack(id)
     }
 
-    public void setListener (Listener l) {
-        mListener = l;
+    fun setListener(l: Listener?) {
+        listener = l
     }
 
-    public AlbumWrapper getAlbum () {
-        return mAlbum;
+    interface Listener {
+        fun onClick(track: TrackSimple?)
     }
 
-    public interface Listener {
-        void onClick (TrackSimple track);
+    companion object {
+        private const val TAG = "AlbumFragment"
     }
 }

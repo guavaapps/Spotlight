@@ -9,27 +9,25 @@ import com.pixel.spotifyapi.Objects.TrackSimple
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.fragment.app.viewModels
 import com.guavaapps.components.listview.ListView
+import com.pixel.spotifyapi.Objects.Album
+import com.pixel.spotifyapi.Objects.Track
 import java.util.ArrayList
 
+private const val TAG = "AlbumFragment"
+
 class AlbumFragment : Fragment() {
-    private val viewModel: ContentViewModel by activityViewModels{ ContentViewModel.Factory }
+    private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
-    var album: AlbumWrapper? = null
-        private set
-
-    private val items: MutableList<View> = ArrayList()
-    private val ids: MutableList<String?> = ArrayList()
-
-    private var id: String? = null
+    private val items = mutableListOf<View>()
+    private var index = 0
 
     private lateinit var nestedScrollableHost: NestedScrollableHost
     private lateinit var listView: ListView
 
     private lateinit var colorSet: ColorSet
 
-    private var listener: Listener? = null
+    private var onSelectedBlock: (TrackSimple?) -> Unit = {}
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -43,102 +41,119 @@ class AlbumFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         nestedScrollableHost = view.findViewById(R.id.host)
         nestedScrollableHost.post {
-            nestedScrollableHost.init(context,
-                R.id.pager)
+            nestedScrollableHost.init(context, R.id.pager)
         } //pager2));
         listView = view.findViewById(R.id.list_view)
         viewModel.album.observe(viewLifecycleOwner) { albumWrapper ->
-            val track = viewModel.track.value!!.track.id
-            setAlbum(albumWrapper!!, track)
+            if (albumWrapper?.album == null) return@observe
+
+            val track = viewModel.track.value?.track
+
+            setAlbum(albumWrapper)
+            makeSelection(track, albumWrapper.album)
+        }
+
+        viewModel.track.observe(viewLifecycleOwner) {
+            val album = viewModel.album.value?.album ?: return@observe
+
+            makeSelection(it?.track, album)
         }
     }
 
-    private fun setCurrentTrack(id: String) {
-        val i = ids.indexOf(id)
-        val j = ids.indexOf(id)
-        this.id = id
-        if (i != -1) {
-            val v1 = items[i]
-            val titleView1 = v1.findViewById<TextView>(R.id.title_view)
-            val titleView2 = v1.findViewById<TextView>(R.id.duration_view)
-            titleView1.setTextColor(colorSet!!.secondary)
-            titleView2.setTextColor(colorSet!!.secondary)
-        }
-        val v2 = items[j]
-        val titleView2 = v2.findViewById<TextView>(R.id.title_view)
-        val titleView3 = v2.findViewById<TextView>(R.id.duration_view)
-        titleView2.setTextColor(colorSet!!.primary)
-        titleView3.setTextColor(colorSet!!.primary)
-        listView!!.scrollToPosition(j)
+    private fun makeSelection(track: Track?, album: Album?) {
+        if (track?.album?.id != album?.id) return
+
+        unselectView(index)
+        index = album?.tracks?.items?.indexOfFirst { t -> t.id == track?.id } ?: 0
+        selectView(index)
     }
 
-    fun setAlbum(album: AlbumWrapper, id: String) {
-        this.album = album
+    private fun selectView(index: Int) {
+        val view = items[index]
+
+        val titleView = view.findViewById<TextView>(R.id.title_view)
+        val durationView = view.findViewById<TextView>(R.id.duration_view)
+
+        titleView.setTextColor(colorSet.primary)
+        durationView.setTextColor(colorSet.primary)
+    }
+
+    private fun unselectView(index: Int) {
+        val view = items[index]
+
+        val titleView = view.findViewById<TextView>(R.id.title_view)
+        val durationView = view.findViewById<TextView>(R.id.duration_view)
+
+        titleView.setTextColor(colorSet.secondary)
+        durationView.setTextColor(colorSet.secondary)
+    }
+
+    private fun createItem(track: TrackSimple): View {
+        val item = LayoutInflater.from(context).inflate(R.layout.album_view_item, null, false)
+
+        item.layoutParams = ViewGroup.LayoutParams(-1, -2)
+
+        val typedArray =
+            requireContext().theme.obtainStyledAttributes(android.R.style.Theme_Material_NoActionBar,
+                intArrayOf(android.R.attr.selectableItemBackground))
+
+        val ripple =
+            resources.getDrawable(typedArray.getResourceId(0, 0), requireContext().theme)
+                .mutate()
+
+        ripple.setTint(colorSet.ripple)
+
+        item.background = ripple
+        item.isClickable = true
+
+        item.setOnClickListener {
+            unselectView(this.index)
+            this.index = items.indexOf(it)
+            selectView(this.index)
+
+            val selected = viewModel.album.value?.album?.tracks?.items?.get(items.indexOf(it))
+
+            onSelectedBlock(selected)
+        }
+
+        val titleView = item.findViewById<TextView>(R.id.title_view)
+        val artistsView = item.findViewById<TextView>(R.id.artists_view)
+        val durationView = item.findViewById<TextView>(R.id.duration_view)
+
+        titleView.text = track.name
+
+        val duration = TimeString(track.duration_ms).apply {
+            minutes()
+            separator(":")
+            seconds("%02d")
+        }.toString()
+
+        durationView.text = duration
+        artistsView.text = track.artists.joinToString { it.name }
+
+        titleView.setTextColor(colorSet!!.secondary)
+        artistsView.setTextColor(colorSet!!.secondary)
+        durationView.setTextColor(colorSet!!.secondary)
+
+        return item
+    }
+
+    private fun setAlbum(album: AlbumWrapper) {
         colorSet = create(album.bitmap)
-        ids.clear()
         items.clear()
-        listView!!.clear()
-        for (track in album.album!!.tracks.items) {
-            ids.add(track.id)
-            val item = LayoutInflater.from(context).inflate(R.layout.album_view_item, null, false)
-            item.layoutParams = ViewGroup.LayoutParams(-1, -2)
-            val typedArray =
-                requireContext().theme.obtainStyledAttributes(android.R.style.Theme_Material_NoActionBar,
-                    intArrayOf(android.R.attr.selectableItemBackground))
-            val ripple =
-                resources.getDrawable(typedArray.getResourceId(0, 0), requireContext().theme)
-                    .mutate()
-            ripple.setTint(colorSet!!.ripple)
-            item.background = ripple
-            item.isClickable = true
-            item.setOnClickListener { v: View? ->
-                if (listener != null) {
-                    listener!!.onClick(track)
-                    setCurrentTrack(track.id)
-                }
-            }
-            val titleView = item.findViewById<TextView>(R.id.title_view)
-            val artistsView = item.findViewById<TextView>(R.id.artists_view)
-            val durationView = item.findViewById<TextView>(R.id.duration_view)
-            titleView.text = track.name
-//            val duration = TimeString.Builder(track.duration_ms)
-//                .minutes()
-//                .separator(":")
-//                .seconds("%02d")
-//                .build()
-//                .toString()
+        listView.clear()
 
-            val duration = TimeString(track.duration_ms).apply {
-                minutes()
-                separator(":")
-                seconds("%02d")
-            }.toString()
+        val tracks = album.album?.tracks?.items
 
-            durationView.text = duration
-            val artists: MutableList<String> = ArrayList()
-            for (artist in track.artists) {
-                artists.add(artist.name)
-            }
-
-            artistsView.text = java.lang.String.join(", ", artists)
-            titleView.setTextColor(colorSet!!.secondary)
-            artistsView.setTextColor(colorSet!!.secondary)
-            durationView.setTextColor(colorSet!!.secondary)
+        tracks?.forEach {
+            val item = createItem(it)
             items.add(item)
         }
-        listView!!.add(items)
-        setCurrentTrack(id)
+
+        listView.add(items)
     }
 
-    fun setListener(l: Listener?) {
-        listener = l
-    }
-
-    interface Listener {
-        fun onClick(track: TrackSimple?)
-    }
-
-    companion object {
-        private const val TAG = "AlbumFragment"
+    fun onTrackSelected(onSelected: (track: TrackSimple?) -> Unit) {
+        onSelectedBlock = onSelected
     }
 }

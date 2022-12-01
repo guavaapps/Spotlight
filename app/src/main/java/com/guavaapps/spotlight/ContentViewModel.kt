@@ -1,25 +1,22 @@
 package com.guavaapps.spotlight
 
 import android.graphics.Bitmap
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.*
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.guavaapps.components.bitmap.BitmapTools.from
-import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
-import com.guavaapps.spotlight.realm.AppUser
-import com.guavaapps.spotlight.realm.RealmAlbumWrapper
 import com.guavaapps.spotlight.realm.TrackModel
-import com.pixel.spotifyapi.Objects.*
+import com.pixel.spotifyapi.Objects.Album
+import com.pixel.spotifyapi.Objects.AudioFeaturesTrack
+import com.pixel.spotifyapi.Objects.Track
+import com.pixel.spotifyapi.Objects.UserPrivate
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.SpotifyAppRemote
 import com.spotify.protocol.types.PlayerState
 import com.spotify.protocol.types.Repeat
 import io.realm.RealmList
-import io.realm.mongodb.App
 import io.realm.mongodb.Credentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,6 +26,7 @@ import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import kotlin.contracts.ExperimentalContracts
 
 private const val TAG = "ViewModel"
 
@@ -60,6 +58,10 @@ class ContentViewModel(
     }
 
     fun getTrack() = track as LiveData<TrackWrapper?>
+
+    fun setTrack(wrappedTrack: TrackWrapper?) {
+        track.value = wrappedTrack
+    }
 
     val nextTrack = MutableLiveData<TrackWrapper?>()
     val album = MutableLiveData<AlbumWrapper?>()
@@ -121,8 +123,8 @@ class ContentViewModel(
                 )
             )
 
-            modelRepository.close()
-            matcha.logout()
+//            modelRepository.close()
+//            matcha.logout()
 
             matcha.login(credentials)
 //            modelRepository.init()
@@ -203,88 +205,30 @@ class ContentViewModel(
 
     // ui
     fun getNext() {
-        Log.e(TAG, "getNext ()")
+        Log.e(TAG,
+            "getNext () - tracks=${tracks.size} next=[${tracks.peek()?.track?.name} ${if (tracks.size > 1) tracks.toTypedArray()[1]?.track?.name else null}]")
 
         viewModelScope.launch {
             // The next batch has already been requested from the Spotify Api, listen for changes to ContentViewModel.track
             if (isWaiting) return@launch
 
             val next = tracks.poll()
+
+            if (next?.track?.album?.id != album.value?.album?.id) {
+                album.value?.album = null
+            }
+
+            track.value = next
+
             if (next != null) {
-                Log.e(TAG, "track queued")
+                setAlbumBitmap(withContext(Dispatchers.IO) { from(next.track.album.images[0].url)!! })
+            }
 
-                track.value = next
 
-                //setAlbumBitmap()
-
-                if (tracks.peek() != null) {
-                    nextTrack.value = tracks.peek()
-                } else {
-                    nextTrack.value = null
-
-                    // lock the spotify api
-                    isWaiting = true
-
-                    // request next batch
-                    get()
-
-                    isWaiting = false
-
-//                spotifyService.getRecommendations(
-//                    requestObject,
-//                    object : Callback<Recommendations> {
-//                        override fun success(t: Recommendations?, response: Response?) {
-//                            t!!.tracks.removeFirst().also {
-//                                track.value = TrackWrapper(
-//                                    it,
-//                                    from(it.album.images[0].url)
-//                                )
-//                            }
-//
-//                            t!!.tracks.removeFirst().also {
-//                                nextTrack.value = TrackWrapper(
-//                                    it,
-//                                    from(it.album.images[0].url)
-//                                )
-//                            }
-//
-//                            tracks.addAll(t!!.tracks
-//                                .slice(2..tracks.indices.last - 1)
-//                                .map {
-//                                    TrackWrapper(
-//                                        it,
-//                                        from(it.album.images[0].url)
-//                                    )
-//                                })
-//
-//                            isWaiting = false
-//                        }
-//
-//                        override fun failure(error: RetrofitError?) {
-//                            // unlock the spotify api
-//                            isWaiting = false
-//
-//                            if (error!!.response.status == 401) {
-//                                // reauth the user
-//                            }
-//
-//
-//                            // retry once TODO retry many?
-//                            if (!hasRetried) {
-//                                hasRetried = true
-//                                getNext()
-//                            } else {
-//                                // were fucked
-//                            }
-//                        }
-//                    })
-
-                }
+            if (tracks.peek() == null) {
+                withLock { get() }
             } else {
-                isWaiting = true
-                get()
-
-                isWaiting = false
+                nextTrack.value = tracks.peek()
             }
         }
     }
@@ -292,31 +236,24 @@ class ContentViewModel(
     private fun setAlbumBitmap(bitmap: Bitmap) {
         if (album.value == null) {
             album.value = AlbumWrapper(null, bitmap)
-        } else if (album.value?.bitmap == null) {
+        } else /*if (album.value?.bitmap == null)*/ {
             album.value = album.value.apply {
                 this?.bitmap = bitmap
             }
         }
     }
 
-    private suspend fun setAlbumBitmap() {
-        val needsAlbum =
-            album.value == null || album.value?.bitmap == null || album.value!!.album!!.id != track.value!!.track.album.id
+    private inline fun withLock(block: () -> Unit) {
+        isWaiting = true
 
-        val album: Album? = null
-//        localRealm.get(
-//            RealmAlbumWrapper::class.java,
-//            track.value!!.track.album.id
-//        )
+        block()
 
-        if (needsAlbum) {
-            this@ContentViewModel.album.value = if (album != null) album as AlbumWrapper
-            else AlbumWrapper(this@ContentViewModel.album.value?.album,
-                withContext(Dispatchers.IO) { from(track.value!!.track.album.images.first().url) })
-        }
+        isWaiting = false
     }
 
     private suspend fun get() {
+        Log.e(TAG, "get()")
+
         val nextTrackFeatures = floatArrayOf()//getNextTrackFeatures()
         val requestObject = createParamsObject(nextTrackFeatures)
 
@@ -325,31 +262,33 @@ class ContentViewModel(
                 spotifyService.getRecommendations(requestObject)
             }
 
-        t!!.tracks.removeFirst().also {
-            track.setValue(TrackWrapper(
-                it,
-                withContext(Dispatchers.IO) { from(it.album.images[0].url) }.also {
-                    setAlbumBitmap(it!!)
-                }
-            ))
+        if (track.value == null) {
+            track.value = t!!.tracks.removeFirst().let {
+                TrackWrapper(it,
+                    withContext(Dispatchers.IO) { from(it.album.images[0].url) }.also {
+                        setAlbumBitmap(it!!)
+                    })
+            }
         }
 
-        t!!.tracks.removeFirst().also {
-            nextTrack.value = TrackWrapper(
-                it,
-                withContext(Dispatchers.IO) { from(it.album.images[0].url) }.also {
-                    setAlbumBitmap(it!!)
-                }
-            )
+        Log.e (TAG, "set for track - ${track.value?.track?.name}")
+
+        if (nextTrack.value == null) {
+            nextTrack.value = t!!.tracks.first().let {
+                TrackWrapper(it,
+                    withContext(Dispatchers.IO) { from(it.album.images[0].url) })
+            }
         }
+
+        Log.e (TAG, "set for next - ${nextTrack.value?.track?.name}")
 
         tracks.addAll(t!!.tracks
-            .slice(2..tracks.indices.last - 1)
             .map {
                 TrackWrapper(
                     it,
                     withContext(Dispatchers.IO) { from(it.album.images[0].url) }
                 )
+            }.also {
             })
     }
 
@@ -419,6 +358,24 @@ class ContentViewModel(
                         .features = RealmList(*it.extractFeatures().toTypedArray())
                 }
         }
+    }
+
+    fun d() {
+        from(Any()) {
+            val s = "s"
+            val f = 0f
+
+            s
+        }
+    }
+
+    @OptIn(ExperimentalContracts::class)
+    private fun <R, T> from(receiver: R, block: R.() -> T): T {
+//        contract {
+//            callsInPlace(block, InvocationKind.EXACTLY_ONCE)
+//        }
+
+        return receiver.block()
     }
 
     private fun AudioFeaturesTrack.extractFeatures(): FloatArray {

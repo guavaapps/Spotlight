@@ -1,6 +1,8 @@
 package com.guavaapps.spotlight
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import io.realm.Realm
 
 private const val APP = "spotlight-gnmnp"

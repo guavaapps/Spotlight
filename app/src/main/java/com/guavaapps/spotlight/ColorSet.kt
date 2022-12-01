@@ -1,12 +1,13 @@
 package com.guavaapps.spotlight
 
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.util.Log
 import com.guavaapps.spotlight.ColorSet
 import androidx.palette.graphics.Palette
 import androidx.palette.graphics.Palette.Swatch
 import com.guavaapps.components.color.Argb
 import com.guavaapps.components.color.Hct
-import com.guavaapps.components.color.Hct.Companion.fromInt
 
 class ColorSet {
     val MAX_DELTA_E = Math.sqrt(195075.0).toFloat()
@@ -33,30 +34,48 @@ class ColorSet {
                     .dominantSwatch
             }
             val color = swatch!!.rgb
-            //        colorSet.surface = surfaceColor.toInt ();
-            val primaryColor: Hct = Hct.fromInt(color)
+
+            val primaryColor = Hct.fromInt(color)
             primaryColor.tone = 90f
             colorSet.primary = primaryColor.toInt()
-            val textColor: Hct = fromInt(color)
+
+            val textColor: Hct = Hct.fromInt(color)
             textColor.tone = 10f
             colorSet.text = textColor.toInt()
-            val c: Argb = Argb.from(primaryColor.toInt())
+
+            val c = Argb.from(primaryColor.toInt())
             c.alpha = 0.6f * 255
             colorSet.secondary = c.toInt()
+
             c.alpha = 0.24f * 255
             colorSet.tertiary = c.toInt()
+
             c.alpha = 0.16f * 255
             colorSet.ripple = c.toInt()
-            val surfaceColor1: Hct = fromInt(color)
+
+            val surfaceColor1: Hct = Hct.fromInt(color)
             surfaceColor1.tone = 10f
+
             colorSet.surface[0] = surfaceColor1.toInt()
+
             val nextDominant = findNextDominant(builder.generate())!!.rgb
-            val surfaceColor2: Hct = fromInt(nextDominant)
+            val surfaceColor2: Hct = Hct.fromInt(nextDominant)
             surfaceColor2.chroma = surfaceColor1.chroma
             surfaceColor2.tone = 10f
+
             colorSet.surface[1] = surfaceColor2.toInt()
 
             return colorSet
+        }
+
+        private fun logColor (color: Int) {
+            Log.e(TAG, with (Argb.from(color)) {
+                arrayOf(
+                    red,
+                    green,
+                    blue
+                ).joinToString()
+            })
         }
 
         private fun findNextDominant(palette: Palette): Swatch? {
@@ -75,19 +94,19 @@ class ColorSet {
         }
 
         private fun deltaH(color1: Int, color2: Int): Float {
-            val hct1: Hct = fromInt(color1)
+            val hct1: Hct = Hct.fromInt(color1)
             val hue1 = hct1.hue
-            val hct2: Hct = fromInt(color2)
+            val hct2: Hct = Hct.fromInt(color2)
             val hue2 = hct2.hue
             return hue1 - hue2
         }
 
         private fun delta(color1: Int, color2: Int): Float {
-            val hct1: Hct = fromInt(color1)
+            val hct1: Hct = Hct.fromInt(color1)
             val hue1 = hct1.hue
             val chroma1 = hct1.chroma
             val tone1 = hct1.tone
-            val hct2: Hct = fromInt(color2)
+            val hct2: Hct = Hct.fromInt(color2)
             val hue2 = hct2.hue
             val chroma2 = hct2.chroma
             val tone2 = hct2.tone

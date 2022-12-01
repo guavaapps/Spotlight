@@ -13,7 +13,7 @@
         app:layout_constraintTop_toTopOf="parent"
         app:tabIndicator="@drawable/tab"
         app:tabIndicatorFullWidth="false"
-        app:tabUnboundedRipple="true"></com.google.android.material.tabs.TabLayout>
+        app:tabUnboundedRipple="true" />
 
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/view_pager"

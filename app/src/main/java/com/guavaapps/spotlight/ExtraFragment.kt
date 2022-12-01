@@ -17,6 +17,7 @@ import android.animation.ValueAnimator
 import android.text.style.ForegroundColorSpan
 import android.text.Spanned
 import android.content.res.ColorStateList
+import android.text.Spannable
 import android.util.Log
 import android.view.View
 import androidx.core.graphics.Insets
@@ -24,20 +25,15 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import com.google.android.material.tabs.TabLayoutMediator
 import com.pixel.spotifyapi.Objects.*
-import java.util.ArrayList
-import java.util.HashMap
+
+private const val TAG = "ExtraFragment"
 
 class ExtraFragment : Fragment() {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
-    private var mInsets: Insets? = null
+    private var insets: Insets? = null
 
     private var colorSet = ColorSet()
-
-    private var mTrack: TrackWrapper? = null
-    private var mAlbum: AlbumWrapper? = null
-
-    private val mArtists: MutableList<ArtistWrapper> = ArrayList()
 
     private var adapter: Adapter? = null
 
@@ -46,12 +42,6 @@ class ExtraFragment : Fragment() {
     private lateinit var viewPager: ViewPager2
 
     private var albumFragment: AlbumFragment? = null
-
-    private val mArtistFragments: List<ArtistFragment> = ArrayList()
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -62,27 +52,31 @@ class ExtraFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
         tabLayout = view.findViewById(R.id.tab_layout)
         viewPager = view.findViewById(R.id.view_pager)
+        adapter = Adapter(requireActivity())
+
         tabLayout.tabMode = TabLayout.MODE_SCROLLABLE
         tabLayout.tabGravity = TabLayout.GRAVITY_CENTER
+        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab?) {
+//                if (tabLayout.selectedTabPosition == 0) applyAlbumTabSelected(tab!!)
+//                else applyAlbumTabUnselected(tabLayout.getTabAt(0)!!)
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab?) {
+            }
+
+            override fun onTabReselected(tab: TabLayout.Tab?) {
+            }
+
+        })
+
         albumFragment = AlbumFragment()
-//        mAlbumFragment!!.setListener { track: TrackSimple ->
-//            viewModel.spotifyService
-//                .getTrack(track.id, object : Callback<Track> {
-//                    override fun success(track: Track, response: Response) {
-//                        val wrappedTrack = TrackWrapper(track, viewModel!!.album.value!!.bitmap)
-//                        viewModel!!.track.setValue(wrappedTrack)
-//                        viewModel!!.spotifyAppRemote.value!!
-//                            .getPlayerApi()
-//                            .play(track.uri)
-//                    }
-//
-//                    override fun failure(error: RetrofitError) {}
-//                })
-//        }
-        adapter = Adapter(requireActivity())
-        viewPager.adapter = adapter
+        albumFragment?.onTrackSelected {
+            Log.e(TAG, "track selected - ${it?.name}")
+        }
 
         requireView().addOnLayoutChangeListener(object : OnLayoutChangeListener {
             override fun onLayoutChange(
@@ -97,114 +91,137 @@ class ExtraFragment : Fragment() {
                 oldBottom: Int,
             ) {
                 ViewCompat.setOnApplyWindowInsetsListener(requireView()) { v: View?, windowInsetsCompat: WindowInsetsCompat ->
-                    mInsets = windowInsetsCompat.getInsets(WindowInsetsCompat.Type.systemBars())
+                    insets = windowInsetsCompat.getInsets(WindowInsetsCompat.Type.systemBars())
                     val params = view.layoutParams as MarginLayoutParams
-                    params.topMargin = getPx(context!!, 128 + 48) + mInsets!!.top
-                    params.bottomMargin = mInsets!!.bottom
+                    params.topMargin = getPx(context!!, 128 + 48) + insets!!.top
+                    params.bottomMargin = insets!!.bottom
                     view.layoutParams = params
                     WindowInsetsCompat.CONSUMED
                 }
                 view.removeOnLayoutChangeListener(this)
             }
         })
-        viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
-            if (trackWrapper != null) {
-                mTrack = trackWrapper
-                if (albumFragment!!.album == null || albumFragment!!.album!!.album!!.id != mTrack!!.track.album.id) {
-//                    AppRepo.getInstance() // TODO use view model
-//                        .getAlbum(viewModel!!.spotifyService.value, context,
-//                            trackWrapper.track.album.id,
-//                            object : AppRepo.ResultListener() {
-//                                override fun onAlbum(albumWrapper: AlbumWrapper) {
-//                                    super.onAlbum(albumWrapper)
-//                                    Handler.createAsync(Looper.getMainLooper())
-//                                        .post {
-//                                            mViewPager.setAdapter(mAdapter)
-//                                            TabLayoutMediator(mTabLayout,
-//                                                mViewPager,
-//                                                TabConfigurationStrategy { tab: TabLayout.Tab, position: Int ->
-//                                                    if (position == 0) {
-//                                                        tab.text =
-//                                                            "From " + mTrack!!.track.album.name
-//                                                    } else tab.text =
-//                                                        mArtists[position - 1].artist.name
-//                                                }).attach()
-//                                        }
-//                                }
-//                            })
-                }
-            }
-        }
-        viewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
-            Log.e(TAG, "extra album")
-            if (albumWrapper?.album != null) {
-                Log.e(TAG, "album not null")
 
-                mAlbum = albumWrapper
-                nextAlbum(albumWrapper)
+        viewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
+            if (albumWrapper?.album != null) {
                 val tabs = mutableListOf<Fragment>()
+
                 tabs.add(albumFragment!!)
-                mArtists.clear()
-                for (artistSimple in getAllArtists(mAlbum!!.album!!)) { //mAlbum.album.artists) {
-                    Log.e(TAG, "adding artist - ${artistSimple.name}")
-                    val artist = Artist()
-                    artist.id = artistSimple.id
-                    artist.name = artistSimple.name
-                    mArtists.add(ArtistWrapper(artist, null))
+
+                val trackArtists = viewModel.track.value?.track?.artists
+                    ?.map { it.name }
+                    ?.toTypedArray() ?: emptyArray<String>()
+
+                val albumArtists = albumWrapper.album?.artists?.map { it.name }
+                    ?.filterNot { trackArtists.contains(it) }
+                    ?.toTypedArray() ?: emptyArray<String>()
+
+                val artists = arrayOf(*trackArtists, *albumArtists)
+
+                artists.forEach {
+                    Artist().apply { name = it }
+
                     tabs.add(ArtistFragment())
                 }
-                adapter!!.setItems(tabs)
 
-                TabLayoutMediator (tabLayout, viewPager) { tab, position ->
-                    if (position == 0) tab.text = mAlbum?.album?.name
-                    else tab.text = mArtists [position - 1].artist?.name
+                adapter!!.setItems(tabs)
+                viewPager.adapter = adapter
+
+                TabLayoutMediator(tabLayout, viewPager) { tab, position ->
+                    tab.text = if (position == 0) {
+                        "From " + albumWrapper.album?.name
+                    } else {
+                        artists[position - 1]
+                    }
                 }.attach()
+
+                applyAlbum(albumWrapper)
             }
         }
     }
 
-    override fun onResume() {
-        super.onResume()
+    private fun applyAlbumTabSelected(tab: TabLayout.Tab) {
+        val tabText = tab.text ?: ""
+
+        val themedText: Spannable = SpannableString(tabText)
+
+        themedText.setSpan(
+            ForegroundColorSpan(colorSet.primary),
+            0,
+            tabText.length,
+            Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+        )
+
+        tab.text = themedText
     }
 
-    override fun onPause() {
-        super.onPause()
+    private fun applyAlbumTabUnselected(tab: TabLayout.Tab) {
+        val tabText = tab.text ?: ""
+
+        val themedText = SpannableString(tabText)
+
+        themedText.setSpan(
+            ForegroundColorSpan(colorSet.primary),
+            0,
+            "FROM".length,
+            Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+        )
+        themedText.setSpan(
+            ForegroundColorSpan(colorSet.secondary),
+            "FROM".length,
+            tabText.length,
+            Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+        )
+
+        tab.text = themedText
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    private fun applyArtistTabColors() {
+        tabLayout.setTabTextColors(colorSet.secondary, colorSet.primary)
     }
 
-    private fun nextAlbum(wrappedAlbum: AlbumWrapper) {
-        val album = wrappedAlbum.album
+    private fun applyAlbumTabColors() {
+        with(tabLayout.getTabAt(0)!!) {
+            if (isSelected) applyAlbumTabSelected(this)
+            else applyAlbumTabUnselected(this)
+        }
+    }
+
+    private fun applyTabColors() {
+        applyArtistTabColors()
+        applyAlbumTabColors()
+
+        tabLayout.setSelectedTabIndicatorColor(colorSet.primary)
+    }
+
+    private fun applyAlbum(wrappedAlbum: AlbumWrapper) {
         val bitmap = wrappedAlbum.bitmap
         val colorSet = create(bitmap)
-        val albumTabTitle = SpannableString("From " + album!!.name)
-        val primaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.primary, colorSet.primary)
+
+        val primaryAnimator = ValueAnimator.ofObject(
+            ArgbEvaluator(),
+            this.colorSet.primary, colorSet.primary
+        )
+
         primaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
+
         primaryAnimator.addUpdateListener { animation: ValueAnimator ->
             this.colorSet.primary = animation.animatedValue as Int
-            tabLayout!!.setTabTextColors(this.colorSet.primary, animation.animatedValue as Int)
-            tabLayout!!.setSelectedTabIndicatorColor(this.colorSet.primary)
-            albumTabTitle.setSpan(ForegroundColorSpan(this.colorSet.primary),
-                5,
-                albumTabTitle.length,
-                Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+
+            applyTabColors()
         }
         primaryAnimator.start()
+
         val secondaryAnimator =
             ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.secondary, colorSet.secondary)
+
         secondaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
         secondaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            this.colorSet.primary = animation.animatedValue as Int
-            tabLayout!!.setTabTextColors(this.colorSet.secondary, this.colorSet.primary)
-            albumTabTitle.setSpan(ForegroundColorSpan(this.colorSet.secondary),
-                0,
-                4,
-                Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+            this.colorSet.secondary = animation.animatedValue as Int
+
+            applyTabColors()
         }
         secondaryAnimator.start()
         val tertiaryAnimator =
@@ -221,31 +238,11 @@ class ExtraFragment : Fragment() {
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
         rippleAnimator.addUpdateListener { animation: ValueAnimator ->
             this.colorSet.ripple = animation.animatedValue as Int
+
             tabLayout!!.tabRippleColor =
                 ColorStateList(arrayOf(intArrayOf()), intArrayOf(this.colorSet.ripple))
         }
         rippleAnimator.start()
         this.colorSet = colorSet
-    }
-
-    companion object {
-        private const val TAG = "ExtraFragment"
-        private fun getAllArtists(album: Album): List<ArtistSimple> {
-            val artists: MutableList<ArtistSimple> = ArrayList()
-            val quantitizedMap: MutableMap<String, Int> = HashMap()
-            for (trackSimple in album.tracks.items) {
-                for (artistSimple in trackSimple.artists) {
-                    if (quantitizedMap.keys.contains(artistSimple.id)) {
-//                    int v = quantitizedMap.get (artistSimple);
-//
-//                    quantitizedMap.put (artistSimple, v++);
-                    } else {
-                        artists.add(artistSimple)
-                        quantitizedMap[artistSimple.id] = 1
-                    }
-                }
-            }
-            return artists
-        }
     }
 }

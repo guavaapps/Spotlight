@@ -14,6 +14,8 @@ import android.animation.ValueAnimator
 import android.view.MotionEvent
 import android.animation.ValueAnimator.AnimatorUpdateListener
 import android.animation.AnimatorListenerAdapter
+import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
 import android.util.Log
 import android.view.View
@@ -23,20 +25,25 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
+import com.guavaapps.components.Components
 import java.lang.Exception
 import java.util.*
 import androidx.fragment.app.FragmentContainerView as FragmentContainerView
 
 class TrackFragment : Fragment() {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
+
     private var insets: Insets? = null
+
     private lateinit var trackLargeContainer: FragmentContainerView
     private lateinit var trackSmallContainer: FragmentContainerView
+
     private var trackViewSize = 0
 
     private lateinit var trackView: ImageView
     private lateinit var nextTrackView: ImageView
     private lateinit var playlistView: ImageView
+
     private var hasTrack = true
     private var onTouchListener: OnTouchListener? = null
 
@@ -85,20 +92,23 @@ class TrackFragment : Fragment() {
         })
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     fun initViews(viewWidth: Int, viewHeight: Int) {
         val rawSize = 100000
 
-        trackViewSize =
-            if (rawSize < getPx(requireContext(), MAX_TRACK_VIEW_SIZE_DP)) rawSize else getPx(
-                requireContext(), MAX_TRACK_VIEW_SIZE_DP)
+        onTouchListener = OnTouchListener(viewWidth, viewHeight, nextTrackView)
+
+        trackViewSize = if (rawSize < getPx(requireContext(), MAX_TRACK_VIEW_SIZE_DP)) rawSize
+        else getPx(requireContext(), MAX_TRACK_VIEW_SIZE_DP)
 
         trackView.layoutParams = ConstraintLayout.LayoutParams(trackViewSize, trackViewSize)
-        nextTrackView.layoutParams =
-            ConstraintLayout.LayoutParams(trackViewSize, trackViewSize)
+        nextTrackView.layoutParams = ConstraintLayout.LayoutParams(trackViewSize, trackViewSize)
+
         trackSmallContainer.layoutParams = ConstraintLayout.LayoutParams(
             viewWidth - getPx(requireContext(), 128 + 48 + 24),
             -2
         )
+
         try { // TODO init in layout
             val fragments = requireActivity().supportFragmentManager.fragments
             var s = false
@@ -107,53 +117,52 @@ class TrackFragment : Fragment() {
                 if (f.javaClass == TrackSmallFragment::class.java) s = true
                 if (f.javaClass == TrackLargeFragment::class.java) l = true
             }
-            if (s || l) throw Exception()
 
-//            requireActivity ().getSupportFragmentManager ().beginTransaction ()
-//                    .add (mTrackLargeContainer.getId (), mTrackLargeFragment)
-//                    .commit ();
-//
-//            requireActivity ().getSupportFragmentManager ().beginTransaction ()
-//                    .add (mTrackSmallContainer.getId (), mTrackSmallFragment)
-//                    .commit ();
+            if (s || l) throw Exception()
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        trackSmallContainer!!.x = getPx(requireContext(), 128 + 48).toFloat()
-        val y = (getPx(requireContext(), 128) - trackSmallContainer!!.height) / 2 + insets!!.top
-        trackSmallContainer!!.y = y.toFloat()
-        trackView!!.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
-        trackView!!.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
-        onTouchListener = OnTouchListener(viewWidth, viewHeight, nextTrackView!!)
-        trackView!!.setOnTouchListener(onTouchListener)
-        nextTrackView!!.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
-        nextTrackView!!.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
-        nextTrackView!!.scaleX = 0.5f
-        nextTrackView!!.scaleY = 0.5f
-        nextTrackView!!.alpha = 0.5f
+
+//        val y = (getPx(requireContext(), 128) - trackSmallContainer.height) / 2 + insets!!.top
+        trackSmallContainer.x = getPx(requireContext(), 128 + 48).toFloat()
+        trackSmallContainer.y = ((getPx(requireContext(),
+            128) - trackSmallContainer.height) / 2 + insets!!.top).toFloat()
+
+        trackView.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
+        trackView.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
+        trackView.setOnTouchListener(onTouchListener)
+
+        nextTrackView.x = (viewWidth / 2 - trackViewSize / 2).toFloat()
+        nextTrackView.y = (viewHeight / 2 - trackViewSize / 2).toFloat()
+        nextTrackView.scaleX = 0.5f
+        nextTrackView.scaleY = 0.5f
+        nextTrackView.alpha = 0.5f
+
         viewModel.user.observe(viewLifecycleOwner) { userWrapper -> }
+
         viewModel.getTrack().observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
-            Log.e(TAG, "track observer - ${trackWrapper != null}")
             if (trackWrapper != null) {
-                trackView!!.setImageBitmap(trackWrapper.thumbnail)
-//                nextTrack (trackWrapper);
+                trackView.setImageBitmap(trackWrapper.thumbnail)
                 hasTrack = true
             } else {
                 val drawable = ColorDrawable()
                 drawable.color = Color.MAGENTA
-                trackView!!.setImageDrawable(drawable)
+                trackView.setImageDrawable(drawable)
                 hasTrack = false
             }
         }
-        viewModel!!.nextTrack.observe(viewLifecycleOwner, Observer { trackWrapper: TrackWrapper? ->
+
+        viewModel.nextTrack.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
             if (trackWrapper != null) {
-                nextTrackView!!.setImageBitmap(trackWrapper.thumbnail)
+                Log.e(TAG, "nextTrack - ${trackWrapper.track.name} bitmap=${trackWrapper.thumbnail}")
+                nextTrackView.setImageBitmap(trackWrapper.thumbnail)
             } else {
+                Log.e(TAG, "nextTrack - null")
                 val drawable = ColorDrawable()
                 drawable.color = Color.MAGENTA
-                trackView!!.setImageDrawable(drawable)
+                nextTrackView.setImageDrawable(drawable)
             }
-        })
+        }
     }
 
     fun resizeX(offset: Float) {
@@ -222,40 +231,7 @@ class TrackFragment : Fragment() {
         alphaLarge(offset)
     }
 
-    private val isWaiting = false
-
-    // media
-    fun setTrack(wrappedTrack: TrackWrapper?) {
-
-    }
-
-    //    private ColorSet createColorSet (Bitmap bitmap) {
-    //        ColorSet colorSet = new ColorSet ();
-    //
-    //        int color = Palette.from (bitmap).generate ()
-    //                .getDominantSwatch ()
-    //                .getRgb ();
-    //
-    //        Hct surfaceColor = Hct.fromInt (color);
-    //        surfaceColor.setTone (10);
-    //        colorSet.surface = surfaceColor.toInt ();
-    //
-    //        Hct primaryColor = Hct.fromInt (color);
-    //        primaryColor.setTone (90);
-    //        colorSet.primary = primaryColor.toInt ();
-    //
-    //        Argb c = Argb.from (primaryColor.toInt ());
-    //        c.setAlpha (0.6f * 255);
-    //        colorSet.secondary = c.toInt ();
-    //
-    //        c.setAlpha (0.24f * 255);
-    //        colorSet.tertiary = c.toInt ();
-    //
-    //        c.setAlpha (0.16f * 255);
-    //        colorSet.ripple = c.toInt ();
-    //
-    //        return colorSet;
-    //    }
+    // TODO DONT TOUCH AT ALL COSTS THIS TOOK SOME MUCH TIME TO DO
     private inner class OnTouchListener(
         private val mViewWidth: Int,
         private val mViewHeight: Int,
@@ -285,6 +261,7 @@ class TrackFragment : Fragment() {
         private var mNextRxAnimator: ValueAnimator? = null
         private var mXAnimator: ValueAnimator? = null
         private var mYAnimator: ValueAnimator? = null
+
         override fun onTouch(v: View, event: MotionEvent): Boolean {
             if (event.action == MotionEvent.ACTION_DOWN) {
 //                mParent.setUserInputEnabled (false);
@@ -566,7 +543,6 @@ class TrackFragment : Fragment() {
     companion object {
         private const val MAX_TRACK_VIEW_SIZE_DP = 256
 
-        //media
         private const val TAG = "TrackFragment"
     }
 }

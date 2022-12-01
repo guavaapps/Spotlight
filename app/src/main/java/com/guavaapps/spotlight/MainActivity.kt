@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -14,7 +15,6 @@ import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.fragment.NavHostFragment
 import com.pixel.spotifyapi.Objects.UserPrivate
 import com.pixel.spotifyapi.SpotifyApi
-import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.ConnectionParams
 import com.spotify.android.appremote.api.Connector
 import com.spotify.android.appremote.api.SpotifyAppRemote
@@ -24,7 +24,6 @@ import com.spotify.sdk.android.auth.AuthorizationResponse
 import retrofit.Callback
 import retrofit.RetrofitError
 import retrofit.client.Response
-import javax.security.auth.login.LoginException
 
 private const val TAG = "MainActivity"
 private const val CLIENT_ID = "431b4c7e106c4470a0b145cdfe7962bd"

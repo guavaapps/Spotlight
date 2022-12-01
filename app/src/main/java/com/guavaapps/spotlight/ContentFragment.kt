@@ -10,7 +10,6 @@ import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -24,6 +23,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
 import com.pixel.spotifyapi.Objects.Track
+import kotlinx.coroutines.awaitAll
 import android.widget.ImageView as ImageView
 import com.guavaapps.spotlight.UserFragment as UserFragment
 
@@ -106,8 +106,8 @@ class ContentFragment : Fragment() {
         })
 
         viewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
-            if (albumWrapper != null) {
-                nextAlbum(albumWrapper)
+            if (albumWrapper?.bitmap != null) {
+                applyAlbum(albumWrapper)
             } else {
             }
         }
@@ -190,23 +190,14 @@ class ContentFragment : Fragment() {
                 })
 
                 ViewCompat.setOnApplyWindowInsetsListener(view, null)
-
-//                    return windowInsetsCompat;
-//                }));
                 view.viewTreeObserver.removeOnGlobalLayoutListener(this)
             }
         })
     }
 
-    private fun nextAlbum(wrappedAlbum: AlbumWrapper) {
-        nextTrack(TrackWrapper(Track(), wrappedAlbum.bitmap))
-    }
-
-    private fun nextTrack(wrappedTrack: TrackWrapper) {
-        val bitmap = wrappedTrack.thumbnail
+    private fun applyAlbum(wrappedAlbum: AlbumWrapper) {
+        val bitmap = wrappedAlbum.bitmap
         val colorSet = ColorSet.create(bitmap)
-
-        Log.e(TAG, "IS THIS NULL AND HOWWWWWW? ${bitmap == null}")
 
         surfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
 
@@ -264,13 +255,9 @@ class ContentFragment : Fragment() {
         this.colorSet = colorSet
     }
 
-    private inner class Adapter(fragmentActivity: FragmentActivity) :
-        FragmentStateAdapter(fragmentActivity) {
+    private inner class Adapter(fragmentActivity: FragmentActivity) : FragmentStateAdapter(fragmentActivity) {
         override fun createFragment(position: Int): Fragment {
-            when (position) {
-//                0 -> return Fragment()
-                1 -> return extraFragment
-            }
+            if (position == 1) return extraFragment
             return Fragment() /// fkjdkaaaa aaaaaaaaaaahhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
         }
 

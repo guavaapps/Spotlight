@@ -138,6 +138,13 @@ class ExtraFragment : Fragment() {
                 applyAlbum(albumWrapper)
             }
         }
+
+        viewModel.track.observe(viewLifecycleOwner) {
+            if (it?.track?.album?.id != viewModel.album.value?.album?.id) {
+                tabLayout.removeAllTabs()
+//                viewPager.removeAllViews()
+            }
+        }
     }
 
     private fun applyAlbumTabSelected(tab: TabLayout.Tab) {

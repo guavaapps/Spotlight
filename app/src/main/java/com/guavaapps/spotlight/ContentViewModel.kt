@@ -7,10 +7,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.guavaapps.components.bitmap.BitmapTools.from
 import com.guavaapps.spotlight.realm.TrackModel
-import com.pixel.spotifyapi.Objects.Album
-import com.pixel.spotifyapi.Objects.AudioFeaturesTrack
-import com.pixel.spotifyapi.Objects.Track
-import com.pixel.spotifyapi.Objects.UserPrivate
+import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.SpotifyAppRemote
@@ -48,6 +45,7 @@ class ContentViewModel(
 
     // internal
     private val tracks: Queue<TrackWrapper?> = LinkedList()
+    private var albums = arrayOf<AlbumWrapper>()
     private val localTimeline = mutableListOf<TrackModel>()
     private val batch = mutableListOf<TrackModel>()
 
@@ -169,6 +167,7 @@ class ContentViewModel(
         Log.e(TAG, "map - $map")
 
         return mutableMapOf<String, Any>(
+            "limit" to 5,
             "seed_genres" to "hip-hop"
         ).toMap()
     }
@@ -196,8 +195,8 @@ class ContentViewModel(
                 batch.clear()
             }
 
-            playlist.value!!.playlist.snapshot_id = spotifyService.addTracksToPlaylist(
-                user.value!!.user.id, playlist.value!!.playlist.id,
+            playlist.value!!.playlist?.snapshot_id = spotifyService.addTracksToPlaylist(
+                user.value!!.user.id, playlist.value!!.playlist?.id,
                 mapOf("uris" to batch.map { it.uri }.joinToString(",")), null
             ).snapshot_id
         }
@@ -221,17 +220,28 @@ class ContentViewModel(
             track.value = next
 
             if (next != null) {
-                setAlbumBitmap(withContext(Dispatchers.IO) { from(next.track.album.images[0].url)!! })
+                //setAlbumBitmap(withContext(Dispatchers.IO) { from(next.track.album.images[0].url)!! })
+                loadAlbum(next.track)
             }
 
 
             if (tracks.peek() == null) {
-                withLock { get() }
+                Log.e(TAG, "doing GET")
+
+                nextTrack.value = null
+
+                if (first) {
+                    first = false
+                    withLock { get() }
+                }
             } else {
+                Log.e(TAG, "doing SET")
                 nextTrack.value = tracks.peek()
             }
         }
     }
+
+    private var first = true
 
     private fun setAlbumBitmap(bitmap: Bitmap) {
         if (album.value == null) {
@@ -262,6 +272,8 @@ class ContentViewModel(
                 spotifyService.getRecommendations(requestObject)
             }
 
+        loadAlbums(t.tracks.toTypedArray())
+
         if (track.value == null) {
             track.value = t!!.tracks.removeFirst().let {
                 TrackWrapper(it,
@@ -269,18 +281,22 @@ class ContentViewModel(
                         setAlbumBitmap(it!!)
                     })
             }
+
+            loadAlbum(track.value?.track)
         }
 
-        Log.e (TAG, "set for track - ${track.value?.track?.name}")
+        Log.e(TAG, "set for track - ${track.value?.track?.name}")
 
         if (nextTrack.value == null) {
+            Log.e(TAG, "-----next is null-----")
+
             nextTrack.value = t!!.tracks.first().let {
                 TrackWrapper(it,
                     withContext(Dispatchers.IO) { from(it.album.images[0].url) })
             }
         }
 
-        Log.e (TAG, "set for next - ${nextTrack.value?.track?.name}")
+        Log.e(TAG, "set for next - ${nextTrack.value?.track?.name}")
 
         tracks.addAll(t!!.tracks
             .map {
@@ -292,13 +308,40 @@ class ContentViewModel(
             })
     }
 
-    fun loadAlbum() = viewModelScope.launch {
+    private suspend fun loadAlbums(tracks: Array<Track>) {
+        val ids = tracks.joinToString(",") { it.album.id }
+
+        albums = withContext(Dispatchers.IO) {
+            spotifyService.getAlbums(ids).albums.map {
+                AlbumWrapper(it,
+                    from(it.images.first().url)
+                )
+            }
+        }.toTypedArray()
+    }
+
+    fun loadAlbum() = loadAlbum(track.value?.track)
+
+    @Deprecated("Use batch load with loadAlbums() and apply with loadAlbum(Track) or loadAlbum()")
+    fun loadSingleAlbum() = viewModelScope.launch {
         if (album.value?.album?.id == track.value?.track?.album?.id && album.value?.bitmap != null) return@launch
 
         album.value = withContext(Dispatchers.IO) {
             AlbumWrapper().apply {
                 album = spotifyService.getAlbum(track.value!!.track.album.id)
                 bitmap = from(album!!.images[0].url)
+
+                Log.e(TAG, "---------------album type - ${album?.album_type}-----------------")
+            }
+        }
+    }
+
+    private fun loadAlbum(track: Track?) = viewModelScope.launch {
+        album.value = with(albums.find { it.album?.id == track?.album?.id }) {
+            if (this != null) this
+            else {
+                loadAlbums(tracks.map { it!!.track }.toTypedArray())
+                albums.first()
             }
         }
     }
@@ -360,13 +403,8 @@ class ContentViewModel(
         }
     }
 
-    fun d() {
-        from(Any()) {
-            val s = "s"
-            val f = 0f
-
-            s
-        }
+    fun d() = viewModelScope.launch {
+        localRealm.d()
     }
 
     @OptIn(ExperimentalContracts::class)

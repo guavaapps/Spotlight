@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import io.realm.Realm
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 
 private const val APP = "spotlight-gnmnp"
 private const val APP_NAME = "Spotlight"

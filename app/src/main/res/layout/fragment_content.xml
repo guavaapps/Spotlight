@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:transitionGroup="true"
     tools:context=".ContentFragment">
 
     <ImageView
@@ -33,19 +34,17 @@
         android:id="@+id/track"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:defaultNavHost="true"
-        android:name="com.guavaapps.spotlight.TrackFragment"
-        app:navGraph="@navigation/nav_graph" />
+        android:name="com.guavaapps.spotlight.TrackFragment" />
+<!--        app:defaultNavHost="true"-->
+<!--    app:navGraph="@navigation/nav_graph"-->
 
-    <ImageView
+    <com.google.android.material.imageview.ShapeableImageView
         android:id="@+id/user"
         android:layout_width="64dp"
         android:layout_height="64dp"
         android:layout_marginBottom="12dp"
         app:layout_constraintRight_toRightOf="parent"
         android:transitionName="trans"
-        android:background="@drawable/shape_oval"
-        android:outlineProvider="background"
-        android:clipToOutline="true"
+        app:shapeAppearanceOverlay="@style/UserButtonShapeAppearance"
         app:layout_constraintTop_toTopOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>

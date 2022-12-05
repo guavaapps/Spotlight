@@ -10,6 +10,9 @@ import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.transition.Fade
+import android.transition.Visibility.MODE_OUT
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,6 +25,9 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.transition.*
+import com.guavaapps.components.Components.getPx
 import com.pixel.spotifyapi.Objects.Track
 import kotlinx.coroutines.awaitAll
 import android.widget.ImageView as ImageView
@@ -29,7 +35,7 @@ import com.guavaapps.spotlight.UserFragment as UserFragment
 
 private const val TAG = "ContentFragment"
 
-class ContentFragment : Fragment() {
+class ContentFragment : Fragment(R.layout.fragment_content) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
     private lateinit var pager: ViewPager2
@@ -48,19 +54,17 @@ class ContentFragment : Fragment() {
     private var colorSet = ColorSet()
 
     private var surfaceBitmap: Bitmap? = null
-    private val mParent: FragmentContainerView? = null
-
     private var navController: NavController? = null
 
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View? {
-        return inflater.inflate(R.layout.fragment_content, container, false)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        postponeEnterTransition()
+        view.doOnPreDraw { startPostponedEnterTransition() }
 
         navController = NavHostFragment.findNavController(this)
 
@@ -80,20 +84,28 @@ class ContentFragment : Fragment() {
 
         userView = view.findViewById(R.id.user)
 
-        surfaceView.setRenderEffect(
-            RenderEffect.createBlurEffect(
-                100f,
-                100f,
-                Shader.TileMode.CLAMP
+        Log.e(TAG, "width - ${surfaceView.width.toFloat()}")
+
+        surfaceView.doOnPreDraw {
+            Log.e(TAG, "widthOnPreDraw - ${surfaceView.width.toFloat()}")
+
+            val radius = surfaceView.width.toFloat()
+
+            surfaceView.setRenderEffect(
+                RenderEffect.createBlurEffect(
+                    radius,
+                    radius,
+                    Shader.TileMode.CLAMP
+                )
             )
-        )
-        tempSurfaceView.setRenderEffect(
-            RenderEffect.createBlurEffect(
-                100f,
-                100f,
-                Shader.TileMode.CLAMP
+            tempSurfaceView.setRenderEffect(
+                RenderEffect.createBlurEffect(
+                    radius,
+                    radius,
+                    Shader.TileMode.CLAMP
+                )
             )
-        )
+        }
         surfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
         tempSurfaceView.scaleType = ImageView.ScaleType.CENTER_CROP
 
@@ -101,7 +113,7 @@ class ContentFragment : Fragment() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
 
-                if (position == 1) viewModel.loadAlbum()
+                if (position == 1) {}//viewModel.loadAlbum()
             }
         })
 
@@ -121,21 +133,37 @@ class ContentFragment : Fragment() {
         userView.setOnClickListener { v: View? ->
             val trans = "trans"
 
+            val animDuration =
+                resources.getInteger(com.google.android.material.R.integer.material_motion_duration_long_2)
+                    .toLong()
+
+            exitTransition = MaterialFade().apply {
+                mode = MaterialFade.MODE_OUT
+                duration = animDuration - 100
+            }
+
+            reenterTransition = MaterialFade().apply {
+                secondaryAnimatorProvider = null // remove scaler
+                mode = MaterialFade.MODE_IN
+                duration = animDuration - 100
+            }
+
             val extras = FragmentNavigatorExtras(v!! to trans)
             val directions = ContentFragmentDirections.actionContentFragmentToUserFragment()
 
-            userView.animate().apply {
-                duration =
-                    resources.getInteger(com.google.android.material.R.integer.material_motion_duration_short_1)
-                        .toLong()
-                alpha(0f)
-            }.start()
+//            userView.animate().apply {
+//                duration =
+//                    resources.getInteger(com.google.android.material.R.integer.material_motion_duration_short_1)
+//                        .toLong()
+//                alpha(0f)
+//            }.start()
 
             navController!!.navigate(directions, extras)
         }
 
         view.viewTreeObserver.addOnGlobalLayoutListener(object : OnGlobalLayoutListener {
             override fun onGlobalLayout() {
+                Log.e(TAG, "onGlobalLayout")
                 val viewWidth = requireView().width
                 val viewHeight = requireView().height
                 ViewCompat.requestApplyInsets(view)
@@ -149,7 +177,8 @@ class ContentFragment : Fragment() {
 
                 val params = userView.layoutParams as ViewGroup.MarginLayoutParams
                 params.apply {
-                    topMargin = insets.top;
+                    topMargin = insets.top + getPx(requireContext(), 24)
+                    rightMargin = insets.right + getPx(requireContext(), 24)
                 }
 
                 pager.adapter = Adapter(requireActivity())
@@ -193,6 +222,18 @@ class ContentFragment : Fragment() {
                 view.viewTreeObserver.removeOnGlobalLayoutListener(this)
             }
         })
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+
+        Log.e(TAG, "onDestroyView")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+
+        Log.e(TAG, "onDestroy")
     }
 
     private fun applyAlbum(wrappedAlbum: AlbumWrapper) {
@@ -255,7 +296,8 @@ class ContentFragment : Fragment() {
         this.colorSet = colorSet
     }
 
-    private inner class Adapter(fragmentActivity: FragmentActivity) : FragmentStateAdapter(fragmentActivity) {
+    private inner class Adapter(fragmentActivity: FragmentActivity) :
+        FragmentStateAdapter(fragmentActivity) {
         override fun createFragment(position: Int): Fragment {
             if (position == 1) return extraFragment
             return Fragment() /// fkjdkaaaa aaaaaaaaaaahhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh

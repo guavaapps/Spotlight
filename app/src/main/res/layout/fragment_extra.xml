@@ -11,7 +11,9 @@
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
         app:layout_constraintTop_toTopOf="parent"
-        app:tabIndicator="@drawable/tab"
+        app:tabIndicator="@drawable/tab_indicator"
+        app:tabMaxWidth="512dp"
+        app:tabTextAppearance="?attr/textAppearanceTitleMedium"
         app:tabIndicatorFullWidth="false"
         app:tabUnboundedRipple="true" />
 

@@ -61,6 +61,10 @@ class MainActivity : AppCompatActivity() {
 
         app = application as Ky
 
+        viewModel.d ()
+
+        Ducky.quack(this)
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContentView(R.layout.activity_main)
@@ -89,7 +93,10 @@ class MainActivity : AppCompatActivity() {
                     return false
                 }
             })
-        if (isSpotifyInstalled) {
+
+        Log.e(TAG, "current=${app.matcha.currentUser?.isLoggedIn}")
+
+        if (isSpotifyInstalled){// && app.matcha.currentUser == null) {
             auth()
         }
     }

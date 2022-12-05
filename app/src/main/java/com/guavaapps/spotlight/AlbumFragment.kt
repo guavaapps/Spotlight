@@ -12,7 +12,6 @@ import androidx.fragment.app.activityViewModels
 import com.guavaapps.components.listview.ListView
 import com.pixel.spotifyapi.Objects.Album
 import com.pixel.spotifyapi.Objects.Track
-import java.util.ArrayList
 
 private const val TAG = "AlbumFragment"
 
@@ -42,15 +41,21 @@ class AlbumFragment : Fragment() {
         nestedScrollableHost = view.findViewById(R.id.host)
         nestedScrollableHost.post {
             nestedScrollableHost.init(context, R.id.pager)
-        } //pager2));
+        }
         listView = view.findViewById(R.id.list_view)
-        viewModel.album.observe(viewLifecycleOwner) { albumWrapper ->
-            if (albumWrapper?.album == null) return@observe
+        viewModel.album.observe(viewLifecycleOwner) {
+            if (it?.album == null) {
+                index = 0
+                listView.removeAllViews()
+                listView.clear()
+
+                return@observe
+            }
 
             val track = viewModel.track.value?.track
 
-            setAlbum(albumWrapper)
-            makeSelection(track, albumWrapper.album)
+            setAlbum(it)
+            makeSelection(track, it.album)
         }
 
         viewModel.track.observe(viewLifecycleOwner) {
@@ -79,6 +84,8 @@ class AlbumFragment : Fragment() {
     }
 
     private fun unselectView(index: Int) {
+        if (index > items.lastIndex) return
+
         val view = items[index]
 
         val titleView = view.findViewById<TextView>(R.id.title_view)

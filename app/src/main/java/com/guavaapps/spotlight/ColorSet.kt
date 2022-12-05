@@ -10,6 +10,9 @@ import com.guavaapps.components.color.Argb
 import com.guavaapps.components.color.Hct
 
 class ColorSet {
+    // TODO rename colors
+    // TODO find a way to deal with low delta
+    // TODO use Pair<K, V> instead of IntArray(2)
     val MAX_DELTA_E = Math.sqrt(195075.0).toFloat()
     var primary = 0
     var secondary = 0
@@ -66,16 +69,6 @@ class ColorSet {
             colorSet.surface[1] = surfaceColor2.toInt()
 
             return colorSet
-        }
-
-        private fun logColor (color: Int) {
-            Log.e(TAG, with (Argb.from(color)) {
-                arrayOf(
-                    red,
-                    green,
-                    blue
-                ).joinToString()
-            })
         }
 
         private fun findNextDominant(palette: Palette): Swatch? {

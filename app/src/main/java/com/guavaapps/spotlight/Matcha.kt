@@ -1,10 +1,12 @@
 package com.guavaapps.spotlight
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
 import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.realmify
+import com.guavaapps.spotlight.realm.RealmTrack
 import io.realm.*
 import io.realm.annotations.Ignore
 import io.realm.annotations.RealmClass
@@ -269,8 +271,7 @@ class Matcha(
                     if (isPrimitive(fieldClass)) {
                         val objects = (v as List<*>)
                         obj[fieldName] = objects
-                    }
-                    else {
+                    } else {
                         val objects = (v as List<*>).map { it?.fromMatchaObject() }
                         obj[fieldName] = objects
                     }
@@ -290,22 +291,21 @@ class Matcha(
             val realmClass = realmClass ?: resolver(c)
             val obj = realmClass.newInstance()!!
 
-            c.fields.forEach {
-                realmClass.declaredFields.find { r -> r.name == it.name } ?: return@forEach
+            c.allFields.forEach {
+                it.isAccessible = true
 
+                realmClass.allFields.find { r -> r.name == it.name } ?: return@forEach
                 val v = it.get(this) ?: return@forEach
-
-                Log.e(TAG, "${it.name} - isPrimitive=${it.type.isPrimitive}")
 
                 val r = realmClass.getDeclaredField(it.name)
                 r.isAccessible = true
 
-                if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "primitive or string")
+                if (isPrimitive(it.type)) {
+                    Log.e(TAG, "[primitive] ${it.name} -> $v")
 
                     r.set(obj, v)
                 } else if (List::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "list")
+                    Log.e(TAG, "[list] ${it.name}")
 
                     r.apply {
                         isAccessible = true
@@ -314,10 +314,10 @@ class Matcha(
                 }
                 // is map
                 else if (Map::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "map")
+                    Log.e(TAG, "[map] ${it.name}")
                     r.set(obj, RealmDictionary(v as Map<String, *>))
                 } else {
-                    Log.e(TAG, "realmifiable")
+                    Log.e(TAG, "[object] ${it.name} -> {realmifiable}")
 
                     val f = if (it in c.declaredFields) {
                         c.getDeclaredField(it.name)
@@ -336,39 +336,60 @@ class Matcha(
             clazz: Class<*>? = null,
             resolver: (Class<*>) -> Class<*>,
         ): Any {
-
-            val c = this::class.java
+            val c = resolveProxy(this::class.java)
+            val o = c.cast(this as RealmObject)
             val clazz = clazz ?: resolver(c)
             val obj = clazz.newInstance()!!
 
-            c.fields.forEach {
-                clazz.declaredFields.find { r -> r.name == it.name } ?: return@forEach
+            Log.e(TAG, "from=${o::class.java.simpleName}")
+
+            Log.e(TAG,
+                "derealmifier - from=${c.simpleName}(${c.allFields.size}) to=${clazz.simpleName}(${clazz.allFields.size})")
+
+            c.allFields.forEach {
+                it.isAccessible = true
+//                clazz.allFields.find { r -> r.name == it.name } ?: return@forEach
+
+                Log.e(TAG, "[looking at] ${it.name}: ${it.type.simpleName} -> {${it.get(o)}}")
 
                 val v = it.get(this) ?: return@forEach
-
-                Log.e(TAG, "${it.name} - isPrimitive=${it.type.isPrimitive}")
 
                 val r = clazz.getDeclaredField(it.name)
                 r.isAccessible = true
 
-                if (it.type.isPrimitive || String::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "primitive or string")
+                if (isPrimitive(it.type)) {
+                    Log.e(TAG, "[primitive] ${it.name} -> $v")
 
                     r.set(obj, v)
                 } else if (RealmList::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "list")
+                    Log.e(TAG, "[list] ${it.name}}")
 
                     r.apply {
                         isAccessible = true
-                        set(obj, (v as RealmList<*>).toList())
+                        set(obj, (v as RealmList<*>).map {
+                            val listClass = it::class.java
+
+                            if (isPrimitive(listClass)) {
+                                it
+                            } else {
+                                it.derealmify(resolver = resolver)
+                            }
+                        })
                     }
                 }
                 // is map
                 else if (RealmMap::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "map")
-                    r.set(obj, (v as RealmDictionary<*>).toMap())
+                    Log.e(TAG, "[map] ${it.name}")
+
+                    r.set(obj, (v as RealmDictionary<*>).map {
+                        if (isPrimitive(it.value::class.java)) {
+                            it
+                        } else {
+                            it.key to it.value.derealmify(resolver = resolver)
+                        }
+                    })
                 } else {
-                    Log.e(TAG, "realmifiable")
+                    Log.e(TAG, "[object] ${it.name} -> {realmifiable}")
 
                     val f = if (it in c.declaredFields) {
                         c.getDeclaredField(it.name)
@@ -381,6 +402,10 @@ class Matcha(
             }
 
             return obj
+        }
+
+        private fun resolveProxy (clazz: Class<*>): Class<*> {
+            return if (clazz.packageName == "io.realm") clazz.superclass else clazz
         }
     }
 
@@ -405,3 +430,6 @@ object SpotifyRealmifier {
         return this.realmify { Class.forName(this::class.java.simpleName.removePrefix("Realm")) }
     }
 }
+
+val Class<*>.allFields
+    get() = setOf(*this.fields, *this.declaredFields)

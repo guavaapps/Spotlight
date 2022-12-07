@@ -61,8 +61,6 @@ class MainActivity : AppCompatActivity() {
 
         app = application as Ky
 
-        viewModel.d ()
-
         Ducky.quack(this)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)

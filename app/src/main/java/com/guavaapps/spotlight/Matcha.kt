@@ -1,14 +1,17 @@
 package com.guavaapps.spotlight
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.util.Log
 import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
+import com.guavaapps.spotlight.Matcha.Companion.isPrimitive
 import com.guavaapps.spotlight.Matcha.Companion.realmify
+import com.guavaapps.spotlight.realm.RealmAlbum
 import com.guavaapps.spotlight.realm.RealmTrack
+import com.pixel.spotifyapi.Objects.Track
 import io.realm.*
 import io.realm.annotations.Ignore
+import io.realm.annotations.PrimaryKey
 import io.realm.annotations.RealmClass
 import io.realm.annotations.RealmField
 import io.realm.mongodb.*
@@ -21,6 +24,7 @@ import java.lang.annotation.Retention
 import java.lang.annotation.RetentionPolicy
 import java.lang.reflect.ParameterizedType
 import java.util.*
+import kotlin.reflect.KClass
 
 private const val TAG = "Matcha"
 private const val MONGODB_ATLAS = "mongodb-atlas"
@@ -29,6 +33,16 @@ private const val MONGODB_ATLAS = "mongodb-atlas"
 @Target(AnnotationTarget.CLASS)
 @Inherited
 annotation class MatchaClass(val name: String = "")
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(AnnotationTarget.CLASS, AnnotationTarget.LOCAL_VARIABLE, AnnotationTarget.TYPEALIAS)
+@Inherited
+annotation class MatchWith(val classes: Array<KClass<*>> = [])
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(AnnotationTarget.CLASS, AnnotationTarget.LOCAL_VARIABLE, AnnotationTarget.TYPEALIAS)
+@Inherited
+annotation class UseEmbeddedKey(val fieldName: String)
 
 class Match<E : RealmObject>(
     private val collection: MongoCollection<Document>,
@@ -294,19 +308,17 @@ class Matcha(
             c.allFields.forEach {
                 it.isAccessible = true
 
-                realmClass.allFields.find { r -> r.name == it.name } ?: return@forEach
+                realmClass.allFields.find { r ->
+                    r.name == it.name
+                } ?: return@forEach
                 val v = it.get(this) ?: return@forEach
 
                 val r = realmClass.getDeclaredField(it.name)
                 r.isAccessible = true
 
                 if (isPrimitive(it.type)) {
-                    Log.e(TAG, "[primitive] ${it.name} -> $v")
-
                     r.set(obj, v)
                 } else if (List::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "[list] ${it.name}")
-
                     r.apply {
                         isAccessible = true
                         set(obj, RealmList(*(v as MutableList<*>).toTypedArray()))
@@ -314,11 +326,8 @@ class Matcha(
                 }
                 // is map
                 else if (Map::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "[map] ${it.name}")
                     r.set(obj, RealmDictionary(v as Map<String, *>))
                 } else {
-                    Log.e(TAG, "[object] ${it.name} -> {realmifiable}")
-
                     val f = if (it in c.declaredFields) {
                         c.getDeclaredField(it.name)
                     } else {
@@ -336,34 +345,22 @@ class Matcha(
             clazz: Class<*>? = null,
             resolver: (Class<*>) -> Class<*>,
         ): Any {
-            val c = resolveProxy(this::class.java)
-            val o = c.cast(this as RealmObject)
+            val c = this::class.java//resolveProxy(this::class.java)
             val clazz = clazz ?: resolver(c)
             val obj = clazz.newInstance()!!
-
-            Log.e(TAG, "from=${o::class.java.simpleName}")
-
-            Log.e(TAG,
-                "derealmifier - from=${c.simpleName}(${c.allFields.size}) to=${clazz.simpleName}(${clazz.allFields.size})")
 
             c.allFields.forEach {
                 it.isAccessible = true
 //                clazz.allFields.find { r -> r.name == it.name } ?: return@forEach
 
-                Log.e(TAG, "[looking at] ${it.name}: ${it.type.simpleName} -> {${it.get(o)}}")
-
                 val v = it.get(this) ?: return@forEach
 
-                val r = clazz.getDeclaredField(it.name)
+                val r = clazz.allFields.find { field -> field.name == it.name }!!
                 r.isAccessible = true
 
                 if (isPrimitive(it.type)) {
-                    Log.e(TAG, "[primitive] ${it.name} -> $v")
-
                     r.set(obj, v)
                 } else if (RealmList::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "[list] ${it.name}}")
-
                     r.apply {
                         isAccessible = true
                         set(obj, (v as RealmList<*>).map {
@@ -379,18 +376,14 @@ class Matcha(
                 }
                 // is map
                 else if (RealmMap::class.java.isAssignableFrom(it.type)) {
-                    Log.e(TAG, "[map] ${it.name}")
-
                     r.set(obj, (v as RealmDictionary<*>).map {
                         if (isPrimitive(it.value::class.java)) {
-                            it
+                            it.toPair()
                         } else {
                             it.key to it.value.derealmify(resolver = resolver)
                         }
-                    })
+                    }.toMap())
                 } else {
-                    Log.e(TAG, "[object] ${it.name} -> {realmifiable}")
-
                     val f = if (it in c.declaredFields) {
                         c.getDeclaredField(it.name)
                     } else {
@@ -404,7 +397,7 @@ class Matcha(
             return obj
         }
 
-        private fun resolveProxy (clazz: Class<*>): Class<*> {
+        private fun resolveProxy(clazz: Class<*>): Class<*> {
             return if (clazz.packageName == "io.realm") clazz.superclass else clazz
         }
     }

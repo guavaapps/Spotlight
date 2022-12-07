@@ -91,6 +91,7 @@ class ContentViewModel(
         user: UserPrivate? = null,
     ) {
         this.spotifyService = spotifyService
+        this.spotifyAppRemote = spotifyAppRemote
 
         viewModelScope.launch(Dispatchers.IO) {
             val user = user ?: spotifyService.getCurrentUser()
@@ -404,7 +405,7 @@ class ContentViewModel(
     }
 
     fun d() = viewModelScope.launch {
-        localRealm.d()
+        LocalRealm.d(localRealm)
     }
 
     @OptIn(ExperimentalContracts::class)

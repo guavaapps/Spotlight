@@ -1,9 +1,11 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
+import com.guavaapps.spotlight.MatchWith
 import com.guavaapps.spotlight.Matcha
 import com.guavaapps.spotlight.Matcha.Companion.derealmify
 import com.guavaapps.spotlight.MatchaClass
+import com.pixel.spotifyapi.Objects.Track
 import io.realm.RealmAny
 import io.realm.RealmDictionary
 import io.realm.RealmList
@@ -61,6 +63,7 @@ open class ModelParam(
 ) : RealmObject() {}
 
 // spotify
+@MatchWith ([Track::class])
 open class RealmTrack(
 ) : RealmObject() {
     @PrimaryKey

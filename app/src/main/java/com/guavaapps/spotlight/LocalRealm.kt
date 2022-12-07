@@ -1,25 +1,19 @@
 package com.guavaapps.spotlight
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
-import androidx.lifecycle.viewmodel.viewModelFactory
 import com.guavaapps.spotlight.Matcha.Companion.derealmify
 import com.guavaapps.spotlight.Matcha.Companion.realmify
-import com.guavaapps.spotlight.realm.RealmAlbum
-import com.guavaapps.spotlight.realm.RealmLinkedTrack
-import com.guavaapps.spotlight.realm.RealmTrack
-import com.pixel.spotifyapi.Objects.Album
+import com.guavaapps.spotlight.realm.RealmTrackWrapper
+import com.pixel.spotifyapi.Objects.LinkedTrack
 import com.pixel.spotifyapi.Objects.Track
 import io.realm.Realm
 import io.realm.RealmConfiguration
 import io.realm.RealmModel
 import io.realm.RealmObject
 import io.realm.annotations.RealmField
-import io.realm.kotlin.where
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import javax.xml.xpath.XPathVariableResolver
+import java.nio.ByteBuffer
 
 private const val TAG = "LocalRealm"
 
@@ -34,51 +28,10 @@ class LocalRealm(context: Context) {
             .name("Spotlight")
             .allowQueriesOnUiThread(true)
             .allowWritesOnUiThread(true)
+            .deleteRealmIfMigrationNeeded()
             .build()
 
         realm = Realm.getInstance(config)
-    }
-
-    fun d() {
-        val trackArray =
-            Array(10) {
-                RealmTrack().apply {
-                    id = "track_id::$it"
-                    linked_from = RealmLinkedTrack().apply {
-                        uri = "uri"
-                    }
-                }
-            }
-
-        val albumArray = Array(10) { RealmAlbum().apply { id = "album_id::$it" } }
-
-        put(trackArray[1])
-        put(trackArray[2])
-
-        val objects = arrayOf(*trackArray)//, *albumArray)
-
-        val realmTrack = RealmTrack().apply { id = "track_id::2" }
-        Log.e(TAG, "realmtrack - ${realmTrack.id}")
-
-        val has = this has realmTrack
-        val hasAll = this hasAll objects.slice(1 until 2).toTypedArray()
-        val hasAny = this hasAny objects
-
-        Log.e("LocalRealm", "has=$has hasAll=$hasAll hasAny=$hasAny")
-
-        val r = this.get(RealmTrack::class.java, "track_id::2")
-        val s = r.derealmify(resolver = ::resolveSpotifyObject) as Track
-
-        Log.e(TAG, "r=${r!!::class.java} s=$s")
-        Log.e(TAG, "id=${s.id} uri=${s.linked_from?.uri} s=$s")
-
-        deleteAll(RealmTrack::class.java)
-
-        val has2 = this has RealmTrack().apply { id = "track_id::2" }
-        val hasAll2 = this hasAll objects
-        val hasAny2 = this hasAny objects
-
-        Log.e("LocalRealm", "has=$has2 hasAll=$hasAll2 hasAny=$hasAny2")
     }
 
     inline infix fun <reified E : RealmObject> hasAll(objects: Array<E>) =
@@ -96,48 +49,42 @@ class LocalRealm(context: Context) {
         }?.get(obj) as String?
             ?: return false
 
-//        realm.where(E::class.java)
-//            .equalTo("_id", id)
-//            .findAll()
-//            .forEach {
-//                Log.e("LocalRealm", "foreach - ${it::class.java.simpleName}")
-//            }
-
         return (realm.where(E::class.java)
             .equalTo("_id", id)
-            .findFirst() != null).also {
-            Log.e("LocalRealm",
-                "has() - class=${E::class.java} id=$id -> $it")
-        }
+            .findFirst() != null)
     }
 
-    fun <E : RealmObject> get(
+    fun <E : RealmModel> get(
         clazz: Class<E>,
         id: String,
-    ): E {
-        Log.e(TAG, "clazz hehe - $clazz")
-
+    ): E? {
         val realmObject = realm.where(clazz)
             .equalTo("_id", id)
             .findFirst()
 
-        val objects = realm.where(clazz)
-            .equalTo("_id", id)
-            .findAll()
-
-        Log.e(TAG, "realm hehe - ${clazz.cast(realmObject!!)::class.java}")
-        Log.e(TAG, "realm hehe - ${objects!!::class.java}")
-
-        Log.e(TAG, "realm object - o=${realmObject} id=${(realmObject as RealmTrack).id}")
-
-        return realmObject//?.derealmify(resolver = ::resolveSpotifyObject)
+        return realm.copyFromRealm(realmObject)
     }
 
     fun <E : RealmObject> put(obj: E) {
         realm.executeTransaction {
-            val realmObject = obj!!.realmify(resolver = ::resolveRealmObject) as RealmObject
+            it.insertOrUpdate(obj)
+        }
+    }
 
-            it.insertOrUpdate(realmObject)
+    fun put(obj: Any) {
+        realm.executeTransaction {
+            if (RealmObject::class.java.isAssignableFrom(obj::class.java)) {
+                it.insertOrUpdate(obj as RealmObject)
+            } else {
+                val clazz = realm.configuration.realmObjectClasses.find {
+                    it.getAnnotation(MatchWith::class.java)?.classes?.contains(obj::class) ?: false
+                }
+
+                val realmObject = obj.realmify(clazz,
+                    ::resolveRealmObject) as RealmModel// ?: return@executeTransaction
+
+                it.insertOrUpdate(realmObject)
+            }
         }
     }
 
@@ -177,5 +124,31 @@ class LocalRealm(context: Context) {
         val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
 
         return Class.forName("com.pixel.spotifyapi.Objects.${clazz.simpleName.removePrefix("Realm")}")
+    }
+
+    companion object {
+        fun d(localRealm: LocalRealm) = with(localRealm) {
+            deleteAll(RealmTrackWrapper::class.java)
+
+            val b = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+            val p = ByteBuffer.allocate(b.height * b.rowBytes)
+            p.put(0, 69)
+            b.copyPixelsFromBuffer(p)
+
+            val w = TrackWrapper(
+                Track().apply {
+                    id = "track_id"
+                    linked_from = LinkedTrack().apply { uri = "linked_uri" }
+                },
+                b
+            )
+
+            put(w)
+
+            val r = get(RealmTrackWrapper::class.java, "track_id")
+            val s = r?.derealmify(resolver = ::resolveSpotifyObject) as TrackWrapper
+
+            Log.e(TAG, "s=${s.track.id} ${s.track.linked_from.uri}")
+        }
     }
 }

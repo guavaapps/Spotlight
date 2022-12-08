@@ -17,12 +17,16 @@ import android.animation.ValueAnimator
 import android.text.style.ForegroundColorSpan
 import android.text.Spanned
 import android.content.res.ColorStateList
+import android.os.Handler
+import android.os.Looper
 import android.text.Spannable
+import android.util.ArraySet
 import android.util.Log
 import android.view.View
 import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.tabs.TabLayoutMediator
 import com.pixel.spotifyapi.Objects.*
 
@@ -108,20 +112,11 @@ class ExtraFragment : Fragment() {
 
                 tabs.add(albumFragment!!)
 
-                val trackArtists = viewModel.track.value?.track?.artists
-                    ?.map { it.name }
-                    ?.toTypedArray() ?: emptyArray<String>()
-
-                val albumArtists = albumWrapper.album?.artists?.map { it.name }
-                    ?.filterNot { trackArtists.contains(it) }
-                    ?.toTypedArray() ?: emptyArray<String>()
-
-                val artists = arrayOf(*trackArtists, *albumArtists)
+                val artists = albumWrapper.album?.tracks?.items?.flatMap { it.artists }
+                    ?.toTypedArray()?.distinctBy { it.id } ?: emptyList<ArtistSimple>()
 
                 artists.forEach {
-                    Artist().apply { name = it }
-
-                    tabs.add(ArtistFragment())
+                    tabs.add(ArtistFragment(viewModel.artists.value?.find { w -> w.artist?.id == it.id }?.artist))
                 }
 
                 adapter!!.setItems(tabs)
@@ -131,7 +126,7 @@ class ExtraFragment : Fragment() {
                     tab.text = if (position == 0) {
                         "From " + albumWrapper.album?.name
                     } else {
-                        artists[position - 1]
+                        artists.map { it.name }[position - 1]
                     }
                 }.attach()
 
@@ -252,4 +247,12 @@ class ExtraFragment : Fragment() {
         rippleAnimator.start()
         this.colorSet = colorSet
     }
+}
+
+fun createOvalShapeAppearance(r: Float): ShapeAppearanceModel {
+    val shape = ShapeAppearanceModel.builder()
+        .setAllCornerSizes(r)
+        .build()
+
+    return shape
 }

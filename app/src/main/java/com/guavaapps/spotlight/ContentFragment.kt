@@ -35,6 +35,9 @@ import com.guavaapps.spotlight.UserFragment as UserFragment
 
 private const val TAG = "ContentFragment"
 
+// TODO content fragment resize trackFragment on page changed to 1
+// TODO trackFragment.resize() - trackView.post -> apply layout params
+
 class ContentFragment : Fragment(R.layout.fragment_content) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 

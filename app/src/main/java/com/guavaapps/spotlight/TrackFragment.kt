@@ -21,6 +21,7 @@ import android.view.View
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import androidx.core.graphics.Insets
+import androidx.core.view.doOnLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import java.lang.Exception
@@ -144,7 +145,7 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
 
         viewModel.user.observe(viewLifecycleOwner) { userWrapper -> }
 
-        viewModel.getTrack().observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
+        viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
             if (trackWrapper != null) {
                 trackView.setImageBitmap(trackWrapper.thumbnail)
                 hasTrack = true
@@ -195,6 +196,7 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
         val p = offset * d
         val newSize = (start + p).toInt()
         val params = trackView!!.layoutParams
+
         params.width = newSize
         params.height = newSize
         trackView!!.layoutParams = params

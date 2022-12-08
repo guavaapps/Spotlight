@@ -19,6 +19,7 @@ package com.guavaapps.spotlight;
 import static androidx.viewpager2.widget.ViewPager2.ORIENTATION_HORIZONTAL;
 
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -30,6 +31,7 @@ import android.widget.FrameLayout;
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.viewpager2.widget.ViewPager2;
 
 /**

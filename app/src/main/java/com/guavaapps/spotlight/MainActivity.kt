@@ -3,6 +3,9 @@ package com.guavaapps.spotlight
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.TypedArray
+import android.graphics.Typeface
+import android.graphics.fonts.FontFamily
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -94,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
         Log.e(TAG, "current=${app.matcha.currentUser?.isLoggedIn}")
 
-        if (isSpotifyInstalled){// && app.matcha.currentUser == null) {
+        if (isSpotifyInstalled) {// && app.matcha.currentUser == null) {
             auth()
         }
     }

@@ -1,6 +1,5 @@
 package com.guavaapps.spotlight
 
-import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.*
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -11,6 +10,7 @@ import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.SpotifyAppRemote
+import com.spotify.protocol.types.Empty
 import com.spotify.protocol.types.PlayerState
 import com.spotify.protocol.types.Repeat
 import io.realm.RealmList
@@ -23,7 +23,6 @@ import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import kotlin.contracts.ExperimentalContracts
 
 private const val TAG = "ViewModel"
 
@@ -46,25 +45,18 @@ class ContentViewModel(
     // internal
     private val tracks: Queue<TrackWrapper?> = LinkedList()
     private var albums = arrayOf<AlbumWrapper>()
+    private var allArtists = mutableListOf<ArtistWrapper>()
     private val localTimeline = mutableListOf<TrackModel>()
     private val batch = mutableListOf<TrackModel>()
 
     // observables TODO set getters and setters
     val user = MutableLiveData<UserWrapper>()
-    val track: MutableLiveData<TrackWrapper?> by lazy {
-        MutableLiveData<TrackWrapper?>()
-    }
-
-    fun getTrack() = track as LiveData<TrackWrapper?>
-
-    fun setTrack(wrappedTrack: TrackWrapper?) {
-        track.value = wrappedTrack
-    }
-
+    val track = MutableLiveData<TrackWrapper?>()
     val nextTrack = MutableLiveData<TrackWrapper?>()
     val album = MutableLiveData<AlbumWrapper?>()
+    val artists = MutableLiveData<List<ArtistWrapper>?>()
+    val artistTracks = MutableLiveData<MutableMap<String, List<TrackWrapper>>>()
     val playlist = MutableLiveData<PlaylistWrapper?>()
-
     val progress = MutableLiveData<Long>()
 
     // features map TODO do something about it idk i dont like it tho
@@ -102,6 +94,10 @@ class ContentViewModel(
 
             getNext()
         }
+    }
+
+    fun f() {
+
     }
 
     private fun reset() {
@@ -204,6 +200,8 @@ class ContentViewModel(
     }
 
     // ui
+    private var first = true
+
     fun getNext() {
         Log.e(TAG,
             "getNext () - tracks=${tracks.size} next=[${tracks.peek()?.track?.name} ${if (tracks.size > 1) tracks.toTypedArray()[1]?.track?.name else null}]")
@@ -222,9 +220,8 @@ class ContentViewModel(
 
             if (next != null) {
                 //setAlbumBitmap(withContext(Dispatchers.IO) { from(next.track.album.images[0].url)!! })
-                loadAlbum(next.track)
+                applyAlbum(next.track)
             }
-
 
             if (tracks.peek() == null) {
                 Log.e(TAG, "doing GET")
@@ -233,7 +230,7 @@ class ContentViewModel(
 
                 if (first) {
                     first = false
-                    withLock { get() }
+                    get()
                 }
             } else {
                 Log.e(TAG, "doing SET")
@@ -242,27 +239,77 @@ class ContentViewModel(
         }
     }
 
-    private var first = true
+    private fun applyArtists(track: Track) {
+        Log.e(TAG, "applyArtists() - track=${track.name}{${track.id}}")
 
-    private fun setAlbumBitmap(bitmap: Bitmap) {
-        if (album.value == null) {
-            album.value = AlbumWrapper(null, bitmap)
-        } else /*if (album.value?.bitmap == null)*/ {
-            album.value = album.value.apply {
-                this?.bitmap = bitmap
+        val album = albums.find { it.album?.id == track.album.id }
+
+        val ids = arrayOf(
+            *track.artists.map { it.id }.toTypedArray(),
+            *album?.album?.tracks?.items?.flatMap { it.artists.map { it.id } }!!
+                .toTypedArray()).distinct()
+
+        Log.e(TAG, "ids - $ids")
+
+        artists.value = allArtists.filter {
+            ids.contains(it.artist?.id ?: "")
+                .also { c -> Log.e(TAG, "[pulled from all artists] ${it.artist?.name} apply?=$c") }
+        }
+    }
+
+    fun getArtistTracks(artist: ArtistSimple) =
+        viewModelScope.launch {
+            val areAnyNull = allArtists.any { it.artist == null }
+
+            Log.e(TAG, "decided to check if bby any chance any of them were null cos weird shit happens - ${
+                if (areAnyNull) "THEY FUCKING ARE"
+                else "nop"
+            }")
+
+            val needsExplicitReload =
+                allArtists.find { it.artist?.id == artist.id }?.thumbnail == null
+
+//            val needsTracks = !(artistTracks.value?.any { it.key == artist.id } ?: false)
+            val needsTracks = ! (artistTracks.value?.containsKey(artist.id) ?: false)
+
+            Log.e(TAG, "needsExplicitReload? $needsExplicitReload")
+
+            if (needsExplicitReload) {
+                allArtists.indices.find { allArtists[it].artist?.id == artist.id }
+                    .takeIf { it != null }!!
+                    .let {
+                        Log.e (TAG, "i have accepted that the spotify api is a bitch")
+                        Log.e (TAG, "therefore i shall not proceed in my attempts to somehow load the images of tracks that FOR WHATEVER REASON dont FUCKING RETURN THE IMAGE URLS")
+                        //allArtists[it] = loadArtistExplicitly(artist)
+                    }
+            }
+
+            if (needsTracks) {
+                val tracks = loadArtistTracks(artist)
+
+                if (artistTracks.value != null) {
+                    val copy = artistTracks.value!!
+                    copy[artist.id] = tracks
+                    artistTracks.value = copy
+                } else artistTracks.value = mutableMapOf(artist.id to tracks)
+            }
+        }
+
+    private fun applyAlbum(track: Track? = this.track.value?.track) = viewModelScope.launch {
+        applyArtists(track!!)
+
+        album.value = with(albums.find { it.album?.id == track?.album?.id }) {
+            if (this != null) this
+            else {
+                loadAlbums(tracks.map { it!!.track }.toTypedArray())
+                albums.first()
             }
         }
     }
 
-    private inline fun withLock(block: () -> Unit) {
-        isWaiting = true
-
-        block()
-
-        isWaiting = false
-    }
-
+    // ui loaders
     private suspend fun get() {
+        isWaiting = true
         Log.e(TAG, "get()")
 
         val nextTrackFeatures = floatArrayOf()//getNextTrackFeatures()
@@ -278,35 +325,70 @@ class ContentViewModel(
         if (track.value == null) {
             track.value = t!!.tracks.removeFirst().let {
                 TrackWrapper(it,
-                    withContext(Dispatchers.IO) { from(it.album.images[0].url) }.also {
-                        setAlbumBitmap(it!!)
-                    })
+                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
+                )
             }
 
-            loadAlbum(track.value?.track)
+            applyAlbum()
         }
-
-        Log.e(TAG, "set for track - ${track.value?.track?.name}")
 
         if (nextTrack.value == null) {
-            Log.e(TAG, "-----next is null-----")
-
             nextTrack.value = t!!.tracks.first().let {
                 TrackWrapper(it,
-                    withContext(Dispatchers.IO) { from(it.album.images[0].url) })
+                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
+                )
             }
         }
-
-        Log.e(TAG, "set for next - ${nextTrack.value?.track?.name}")
 
         tracks.addAll(t!!.tracks
             .map {
                 TrackWrapper(
                     it,
-                    withContext(Dispatchers.IO) { from(it.album.images[0].url) }
+                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
                 )
-            }.also {
             })
+
+        isWaiting = false
+    }
+
+    private suspend fun loadArtistExplicitly(artist: ArtistSimple) = withContext(Dispatchers.IO) {
+        spotifyService.getArtist(artist.id).let {
+            ArtistWrapper(
+                it,
+                from(it.images.firstOrNull()?.url)
+            )
+        }
+    }
+
+    private suspend fun loadArtistTracks(artist: ArtistSimple): List<TrackWrapper> {
+        val tracks = withContext(Dispatchers.IO) {
+            spotifyService.getArtistTopTrack(artist.id,
+                user.value?.user?.country ?: "")
+                .tracks.map {
+                    TrackWrapper(
+                        it,
+                        from(it.album.images.firstOrNull()?.url)
+                    )
+                }
+        }
+
+        return tracks
+    }
+
+    private suspend fun loadArtists(albums: List<Album>, reloadAll: Boolean = true) {
+        val artists =
+            albums.flatMap { it.tracks.items.flatMap { it.artists } }.distinctBy { it.id }.take(27)
+        val ids = artists.joinToString(",") { it.id }
+
+        allArtists = if (artists.size > 10) splitLoad(ids.split(","))
+        else withContext(Dispatchers.IO) {
+            spotifyService.getArtists(ids).artists.map {
+                ArtistWrapper(
+                    it,
+                    from(it.images.firstOrNull()?.url)
+                )
+            }.toMutableList()
+        }
     }
 
     private suspend fun loadAlbums(tracks: Array<Track>) {
@@ -319,32 +401,33 @@ class ContentViewModel(
                 )
             }
         }.toTypedArray()
+
+        loadArtists(albums.map { it.album!! })
     }
 
-    fun loadAlbum() = loadAlbum(track.value?.track)
+    // the spotify web api can handle a maximum request size of 50 ids
+    // TODO impl in SpotifyApi
+    private suspend fun splitLoad(ids: List<String>): MutableList<ArtistWrapper> {
+        val batchSize = 50
 
-    @Deprecated("Use batch load with loadAlbums() and apply with loadAlbum(Track) or loadAlbum()")
-    fun loadSingleAlbum() = viewModelScope.launch {
-        if (album.value?.album?.id == track.value?.track?.album?.id && album.value?.bitmap != null) return@launch
+        val artists = mutableListOf<ArtistWrapper>()
 
-        album.value = withContext(Dispatchers.IO) {
-            AlbumWrapper().apply {
-                album = spotifyService.getAlbum(track.value!!.track.album.id)
-                bitmap = from(album!!.images[0].url)
+        ids.chunked(batchSize).forEach {
+            val ids = it.joinToString(",")
 
-                Log.e(TAG, "---------------album type - ${album?.album_type}-----------------")
-            }
+            artists.addAll(
+                withContext(Dispatchers.IO) {
+                    spotifyService.getArtists(ids).artists.map {
+                        ArtistWrapper(
+                            it,
+                            from(it.images.firstOrNull()?.url)
+                        )
+                    }
+                }
+            )
         }
-    }
 
-    private fun loadAlbum(track: Track?) = viewModelScope.launch {
-        album.value = with(albums.find { it.album?.id == track?.album?.id }) {
-            if (this != null) this
-            else {
-                loadAlbums(tracks.map { it!!.track }.toTypedArray())
-                albums.first()
-            }
-        }
+        return artists
     }
 
     //player state
@@ -391,6 +474,8 @@ class ContentViewModel(
     }
 
     // extension utils
+
+    // set track features of each track of a mutable list of track models
     private suspend fun MutableList<TrackModel>.injectFeatures() {
         val ids = this.map { it.id }.joinToString(",")
 
@@ -404,19 +489,7 @@ class ContentViewModel(
         }
     }
 
-    fun d() = viewModelScope.launch {
-        LocalRealm.d(localRealm)
-    }
-
-    @OptIn(ExperimentalContracts::class)
-    private fun <R, T> from(receiver: R, block: R.() -> T): T {
-//        contract {
-//            callsInPlace(block, InvocationKind.EXACTLY_ONCE)
-//        }
-
-        return receiver.block()
-    }
-
+    // get the features of a track as a float array indexed based on featuresMap using reflection
     private fun AudioFeaturesTrack.extractFeatures(): FloatArray {
         val features = Array(featuresMap.size) { i ->
             val f = featuresMap.filterValues { it == i }.keys.first()
@@ -431,7 +504,10 @@ class ContentViewModel(
     // view model
     companion object {
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+            override fun <T : ViewModel> create(
+                modelClass: Class<T>,
+                extras: CreationExtras,
+            ): T {
                 val app = extras[APPLICATION_KEY] as Ky
 
                 return ContentViewModel(

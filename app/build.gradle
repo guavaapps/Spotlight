@@ -52,7 +52,7 @@ dependencies {
     implementation 'com.spotify.android:auth:1.2.6'
     implementation 'com.squareup.retrofit:retrofit:1.9.0'
 
-    implementation 'com.guavaapps.components:components:1.0.0-alpha07'
+    implementation 'com.guavaapps.components:components:1.0.0-alpha08'
 
     implementation 'org.tensorflow:tensorflow-lite:2.5.0'
     implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:2.5.0'

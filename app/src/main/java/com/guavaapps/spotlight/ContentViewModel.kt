@@ -257,43 +257,19 @@ class ContentViewModel(
         }
     }
 
-    fun getArtistTracks(artist: ArtistSimple) =
-        viewModelScope.launch {
-            val areAnyNull = allArtists.any { it.artist == null }
+    fun getArtistTracks(artist: ArtistSimple) = viewModelScope.launch {
+        val needsTracks = !(artistTracks.value?.containsKey(artist.id) ?: false)
 
-            Log.e(TAG, "decided to check if bby any chance any of them were null cos weird shit happens - ${
-                if (areAnyNull) "THEY FUCKING ARE"
-                else "nop"
-            }")
+        if (needsTracks) {
+            val tracks = loadArtistTracks(artist)
 
-            val needsExplicitReload =
-                allArtists.find { it.artist?.id == artist.id }?.thumbnail == null
-
-//            val needsTracks = !(artistTracks.value?.any { it.key == artist.id } ?: false)
-            val needsTracks = ! (artistTracks.value?.containsKey(artist.id) ?: false)
-
-            Log.e(TAG, "needsExplicitReload? $needsExplicitReload")
-
-            if (needsExplicitReload) {
-                allArtists.indices.find { allArtists[it].artist?.id == artist.id }
-                    .takeIf { it != null }!!
-                    .let {
-                        Log.e (TAG, "i have accepted that the spotify api is a bitch")
-                        Log.e (TAG, "therefore i shall not proceed in my attempts to somehow load the images of tracks that FOR WHATEVER REASON dont FUCKING RETURN THE IMAGE URLS")
-                        //allArtists[it] = loadArtistExplicitly(artist)
-                    }
-            }
-
-            if (needsTracks) {
-                val tracks = loadArtistTracks(artist)
-
-                if (artistTracks.value != null) {
-                    val copy = artistTracks.value!!
-                    copy[artist.id] = tracks
-                    artistTracks.value = copy
-                } else artistTracks.value = mutableMapOf(artist.id to tracks)
-            }
+            if (artistTracks.value != null) {
+                val copy = artistTracks.value!!
+                copy[artist.id] = tracks
+                artistTracks.value = copy
+            } else artistTracks.value = mutableMapOf(artist.id to tracks)
         }
+    }
 
     private fun applyAlbum(track: Track? = this.track.value?.track) = viewModelScope.launch {
         applyArtists(track!!)

@@ -4,11 +4,14 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.os.Bundle
+import android.util.AttributeSet
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.annotation.IdRes
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
@@ -41,7 +44,8 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
         artistName = view.findViewById(R.id.artist_name)
 
         artistTracks = view.findViewById(R.id.tracks)
-        artistTracks.layoutManager as RecyclerView.LayoutManager
+        artistTracks.canScroll = false
+        artistTracks.requestDisallowInterceptTouchEvent(true)
 
         apply(ArtistWrapper(wrappedArtist))
 
@@ -104,9 +108,9 @@ object TrackView {
         name.text = track.track.name
         artists.text = track.track.artists.joinToString { it.name }
         duration.text = TimeString(track.track.duration_ms).apply {
-            seconds("%02d")
-            separator(":")
             minutes()
+            separator(":")
+            seconds("%02d")
         }.toString()
 
         view.setOnClickListener { onClick(track) }

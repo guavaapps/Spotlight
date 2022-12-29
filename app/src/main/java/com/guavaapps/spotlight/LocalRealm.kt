@@ -8,12 +8,12 @@ import com.guavaapps.spotlight.Matcha.Companion.realmify
 import com.guavaapps.spotlight.realm.RealmTrackWrapper
 import com.pixel.spotifyapi.Objects.LinkedTrack
 import com.pixel.spotifyapi.Objects.Track
-import io.realm.Realm
-import io.realm.RealmConfiguration
-import io.realm.RealmModel
-import io.realm.RealmObject
+import io.realm.*
 import io.realm.annotations.RealmField
+import io.realm.mongodb.User
 import java.nio.ByteBuffer
+import kotlin.contracts.ContractBuilder
+import kotlin.contracts.contract
 
 private const val TAG = "LocalRealm"
 
@@ -41,7 +41,8 @@ class LocalRealm(context: Context) {
         objects.any { this has it }
 
     inline infix fun <reified E : RealmObject> has(obj: E): Boolean {
-        val fields = arrayOf(*E::class.java.declaredFields, *E::class.java.fields)
+        val fields =
+            E::class.java.allFields //arrayOf(*E::class.java.declaredFields, *E::class.java.fields)
 
         val id = fields.find {
             it.isAccessible = true
@@ -60,9 +61,19 @@ class LocalRealm(context: Context) {
     ): E? {
         val realmObject = realm.where(clazz)
             .equalTo("_id", id)
-            .findFirst()
 
-        return realm.copyFromRealm(realmObject)
+        return realmObject.findFirstCopied()
+    }
+
+    fun <E : RealmModel> getAll(
+        clazz: Class<E>,
+        id: String? = null,
+    ): List<E?> {
+        val realmObjects = realm.where(clazz)
+            .equalTo("_id", id)
+            .findAllCopied()
+
+        return realmObjects
     }
 
     fun <E : RealmObject> put(obj: E) {
@@ -80,8 +91,7 @@ class LocalRealm(context: Context) {
                     it.getAnnotation(MatchWith::class.java)?.classes?.contains(obj::class) ?: false
                 }
 
-                val realmObject = obj.realmify(clazz,
-                    ::resolveRealmObject) as RealmModel// ?: return@executeTransaction
+                val realmObject = obj.realmify() as RealmObject// ?: return@executeTransaction
 
                 it.insertOrUpdate(realmObject)
             }
@@ -105,50 +115,44 @@ class LocalRealm(context: Context) {
         }
     }
 
+    fun <E : RealmModel> RealmQuery<E>.findAllCopied() = realm.copyFromRealm(this.findAll().toMutableList())
+
+    fun <E : RealmModel> RealmQuery<E>.findFirstCopied(): E? {
+        val obj = this.findFirst()
+
+        return if (obj == null) null else realm.copyFromRealm(obj)
+    }
+
     fun close() {
         realm.close()
     }
+}
 
-    private fun resolveRealmObject(clazz: Class<*>): Class<*> {
-        val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
+inline infix fun <reified E : RealmObject> Realm.hasAll(objects: Array<E>) =
+    objects.all { this has it }
 
-        return if (RealmObject::class.java.isAssignableFrom(clazz)) clazz.also {
-            Log.e(TAG,
-                "resolver - no change $it")
-        }
-        else Class.forName("com.guavaapps.spotlight.realm.Realm${clazz.simpleName}")
-            .also { Log.e(TAG, "resolver - to $it") }
-    }
+inline infix fun <reified E : RealmObject> Realm.hasAny(objects: Array<E>) =
+    objects.any { this has it }
 
-    private fun resolveSpotifyObject(clazz: Class<*>): Class<*> {
-        val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
+inline infix fun <reified E : RealmObject> Realm.has(obj: E): Boolean {
+    val fields =
+        E::class.java.allFields //arrayOf(*E::class.java.declaredFields, *E::class.java.fields)
 
-        return Class.forName("com.pixel.spotifyapi.Objects.${clazz.simpleName.removePrefix("Realm")}")
-    }
+    val id = fields.find {
+        it.isAccessible = true
+        it.getAnnotation(RealmField::class.java)?.value == "_id" || it.name == "_id"
+    }?.get(obj) as String?
+        ?: return false
 
-    companion object {
-        fun d(localRealm: LocalRealm) = with(localRealm) {
-            deleteAll(RealmTrackWrapper::class.java)
+    return (this.where(E::class.java)
+        .equalTo("_id", id)
+        .findFirst() != null)
+}
 
-            val b = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-            val p = ByteBuffer.allocate(b.height * b.rowBytes)
-            p.put(0, 69)
-            b.copyPixelsFromBuffer(p)
+fun <E : RealmModel> RealmQuery<E>.findAllCopied() = realm.copyFromRealm(this.findAll().toMutableList())
 
-            val w = TrackWrapper(
-                Track().apply {
-                    id = "track_id"
-                    linked_from = LinkedTrack().apply { uri = "linked_uri" }
-                },
-                b
-            )
+fun <E : RealmModel> RealmQuery<E>.findFirstCopied(): E? {
+    val obj = this.findFirst()
 
-            put(w)
-
-            val r = get(RealmTrackWrapper::class.java, "track_id")
-            val s = r?.derealmify(resolver = ::resolveSpotifyObject) as TrackWrapper
-
-            Log.e(TAG, "s=${s.track.id} ${s.track.linked_from.uri}")
-        }
-    }
+    return if (obj == null) null else realm.copyFromRealm(obj)
 }

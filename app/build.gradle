@@ -52,13 +52,13 @@ dependencies {
     implementation 'com.spotify.android:auth:1.2.6'
     implementation 'com.squareup.retrofit:retrofit:1.9.0'
 
-    implementation 'com.guavaapps.components:components:1.0.0-alpha08'
+    implementation 'com.guavaapps.components:components:1.0.0-alpha11'
 
     implementation 'org.tensorflow:tensorflow-lite:2.5.0'
     implementation 'org.tensorflow:tensorflow-lite-select-tf-ops:2.5.0'
 
     implementation files('libs/spotify-app-remote-release-0.7.2.aar')
-    implementation files('libs/com.pixel.spotifyapi.SpotifyApi-1.0.0.aar')
+    implementation files('libs/com.pixel.spotifyapi.SpotifyApi-1.0.0-alpha02.aar')
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.3'

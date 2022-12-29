@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.guavaapps.spotlight.NestedScrollableHost
+    <com.guavaapps.components.listview.NestedScrollableHost
         android:id="@+id/nested_scrollable_host"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
@@ -47,5 +47,5 @@
                     app:layout_constraintTop_toBottomOf="@id/artist_name" />
             </androidx.constraintlayout.widget.ConstraintLayout>
         </ScrollView>
-    </com.guavaapps.spotlight.NestedScrollableHost>
+    </com.guavaapps.components.listview.NestedScrollableHost>
 </androidx.constraintlayout.widget.ConstraintLayout>

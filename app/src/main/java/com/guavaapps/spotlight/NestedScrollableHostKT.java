@@ -42,7 +42,8 @@ import androidx.viewpager2.widget.ViewPager2;
  * This solution has limitations when using multiple levels of nested scrollable elements
  * (e.g. a horizontal RecyclerView in a vertical RecyclerView in a horizontal ViewPager2).
  */
-public class NestedScrollableHost extends FrameLayout {
+
+public class NestedScrollableHostKT extends FrameLayout {
     private static final String TAG = "NestedScrollableHost";
 
     private int touchSlop = 0;
@@ -51,11 +52,11 @@ public class NestedScrollableHost extends FrameLayout {
     private ViewPager2 mParent;
     private View child;
 
-    public NestedScrollableHost(@NonNull Context context) {
+    public NestedScrollableHostKT(@NonNull Context context) {
         super(context);
     }
 
-    public NestedScrollableHost(@NonNull Context context, @Nullable AttributeSet attrs) {
+    public NestedScrollableHostKT(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
     }
 

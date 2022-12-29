@@ -30,6 +30,9 @@ import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
 import com.pixel.spotifyapi.Objects.Track
 import kotlinx.coroutines.awaitAll
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 import android.widget.ImageView as ImageView
 import com.guavaapps.spotlight.UserFragment as UserFragment
 
@@ -87,11 +90,7 @@ class ContentFragment : Fragment(R.layout.fragment_content) {
 
         userView = view.findViewById(R.id.user)
 
-        Log.e(TAG, "width - ${surfaceView.width.toFloat()}")
-
         surfaceView.doOnPreDraw {
-            Log.e(TAG, "widthOnPreDraw - ${surfaceView.width.toFloat()}")
-
             val radius = surfaceView.width.toFloat()
 
             surfaceView.setRenderEffect(
@@ -166,9 +165,6 @@ class ContentFragment : Fragment(R.layout.fragment_content) {
 
         view.viewTreeObserver.addOnGlobalLayoutListener(object : OnGlobalLayoutListener {
             override fun onGlobalLayout() {
-                Log.e(TAG, "onGlobalLayout")
-                val viewWidth = requireView().width
-                val viewHeight = requireView().height
                 ViewCompat.requestApplyInsets(view)
 
 //                ViewCompat.setOnApplyWindowInsetsListener (view, (v, windowInsetsCompat) -> {
@@ -229,14 +225,10 @@ class ContentFragment : Fragment(R.layout.fragment_content) {
 
     override fun onDestroyView() {
         super.onDestroyView()
-
-        Log.e(TAG, "onDestroyView")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-
-        Log.e(TAG, "onDestroy")
     }
 
     private fun applyAlbum(wrappedAlbum: AlbumWrapper) {

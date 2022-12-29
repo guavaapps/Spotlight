@@ -63,4 +63,13 @@
     <style name="UserButtonShapeAppearanceLarge">
         <item name="cornerSize">64dp</item>
     </style>
+
+    <style name="ListViewEndShapeAppearance">
+        <item name="cornerSizeBottomLeft">24dp</item>
+        <item name="cornerSizeBottomRight">24dp</item>
+    </style>
+
+    <style name="ListViewAddButtonShapeAppearance">
+        <item name="cornerSize">24dp</item>
+    </style>
 </resources>

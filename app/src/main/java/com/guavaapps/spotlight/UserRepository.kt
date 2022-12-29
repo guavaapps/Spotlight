@@ -1,6 +1,7 @@
 package com.guavaapps.spotlight
 
 import com.guavaapps.spotlight.realm.AppUser
+import io.realm.mongodb.App
 
 class UserRepository(
     private val matcha: Matcha,

@@ -4,16 +4,23 @@ import android.util.Log
 import androidx.lifecycle.*
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.palette.graphics.Palette
 import com.guavaapps.components.bitmap.BitmapTools.from
+import com.guavaapps.spotlight.Matcha.Companion.derealmify
+import com.guavaapps.spotlight.Matcha.Companion.realmify
+import com.guavaapps.spotlight.realm.AppUser
+import com.guavaapps.spotlight.realm.RealmPlaylist
 import com.guavaapps.spotlight.realm.TrackModel
 import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.SpotifyAppRemote
-import com.spotify.protocol.types.Empty
 import com.spotify.protocol.types.PlayerState
 import com.spotify.protocol.types.Repeat
+import io.realm.Realm
 import io.realm.RealmList
+import io.realm.RealmModel
+import io.realm.RealmObject
 import io.realm.mongodb.Credentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,7 +37,7 @@ class ContentViewModel(
     private var matcha: Matcha,
     private var userRepository: UserRepository,
     private var modelRepository: ModelRepository,
-    private var localRealm: LocalRealm,
+    private var localRealm: Realm,
 ) : ViewModel() {
     private var isWaiting = false
     private var needsTrack = true
@@ -46,16 +53,21 @@ class ContentViewModel(
     private val tracks: Queue<TrackWrapper?> = LinkedList()
     private var albums = arrayOf<AlbumWrapper>()
     private var allArtists = mutableListOf<ArtistWrapper>()
+    private var userPlaylists = mutableListOf<PlaylistSimple>()
     private val localTimeline = mutableListOf<TrackModel>()
     private val batch = mutableListOf<TrackModel>()
 
-    // observables TODO set getters and setters
+    private val playlistsListener = Executors.newSingleThreadScheduledExecutor()
+
+    // observables
     val user = MutableLiveData<UserWrapper>()
     val track = MutableLiveData<TrackWrapper?>()
     val nextTrack = MutableLiveData<TrackWrapper?>()
     val album = MutableLiveData<AlbumWrapper?>()
     val artists = MutableLiveData<List<ArtistWrapper>?>()
     val artistTracks = MutableLiveData<MutableMap<String, List<TrackWrapper>>>()
+    val playlists = MutableLiveData<MutableList<PlaylistWrapper>>()
+    val playlistTracks = MutableLiveData<MutableMap<String, List<PlaylistTrackWrapper>>>()
     val playlist = MutableLiveData<PlaylistWrapper?>()
     val progress = MutableLiveData<Long>()
 
@@ -85,25 +97,17 @@ class ContentViewModel(
         this.spotifyService = spotifyService
         this.spotifyAppRemote = spotifyAppRemote
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             val user = user ?: spotifyService.getCurrentUser()
 
             login(user)
 
             updateUser(user)
 
+            prepareMainPlaylist()
+
             getNext()
         }
-    }
-
-    fun f() {
-
-    }
-
-    private fun reset() {
-        tracks.clear()
-        track.value = null
-        nextTrack.value = null
     }
 
     private suspend fun login(user: UserPrivate) {
@@ -126,6 +130,12 @@ class ContentViewModel(
         }
     }
 
+    private fun reset() {
+        tracks.clear()
+        track.value = null
+        nextTrack.value = null
+    }
+
     private suspend fun updateUser(user: UserPrivate) {
         val wrappedUser = UserWrapper(user)
 
@@ -135,6 +145,24 @@ class ContentViewModel(
 
         withContext(Dispatchers.Main) {
             this@ContentViewModel.user.value = wrappedUser
+        }
+
+        val appUser = AppUser().apply {
+            spotify_id = user.id
+            last_login = Date(System.currentTimeMillis())
+            locale = user.country
+        }
+
+        withContext(Dispatchers.IO) {
+            matcha.where(AppUser::class.java)
+                .equalTo("_id", user.id).let {
+                    val user = it.findFirst()
+                    appUser.date_signed_up = user?.date_signed_up
+                    appUser.selectedPlaylistId = user?.selectedPlaylistId
+
+                    it.update(appUser)
+                }
+
         }
     }
 
@@ -173,6 +201,7 @@ class ContentViewModel(
         modelRepository.optimiseModel()
     }
 
+    //i love you so fucking much and  when i looked at you just now i thought my heart was gonna explode
     fun logTrack(track: Track) {
         batch.add(TrackModel(
             track.id,
@@ -203,9 +232,6 @@ class ContentViewModel(
     private var first = true
 
     fun getNext() {
-        Log.e(TAG,
-            "getNext () - tracks=${tracks.size} next=[${tracks.peek()?.track?.name} ${if (tracks.size > 1) tracks.toTypedArray()[1]?.track?.name else null}]")
-
         viewModelScope.launch {
             // The next batch has already been requested from the Spotify Api, listen for changes to ContentViewModel.track
             if (isWaiting) return@launch
@@ -253,7 +279,6 @@ class ContentViewModel(
 
         artists.value = allArtists.filter {
             ids.contains(it.artist?.id ?: "")
-                .also { c -> Log.e(TAG, "[pulled from all artists] ${it.artist?.name} apply?=$c") }
         }
     }
 
@@ -327,15 +352,6 @@ class ContentViewModel(
         isWaiting = false
     }
 
-    private suspend fun loadArtistExplicitly(artist: ArtistSimple) = withContext(Dispatchers.IO) {
-        spotifyService.getArtist(artist.id).let {
-            ArtistWrapper(
-                it,
-                from(it.images.firstOrNull()?.url)
-            )
-        }
-    }
-
     private suspend fun loadArtistTracks(artist: ArtistSimple): List<TrackWrapper> {
         val tracks = withContext(Dispatchers.IO) {
             spotifyService.getArtistTopTrack(artist.id,
@@ -381,11 +397,80 @@ class ContentViewModel(
         loadArtists(albums.map { it.album!! })
     }
 
-    // the spotify web api can handle a maximum request size of 50 ids
-    // TODO impl in SpotifyApi
-    private suspend fun splitLoad(ids: List<String>): MutableList<ArtistWrapper> {
-        val batchSize = 50
+    private fun loadLocalPlaylists(): List<RealmPlaylist> {
+        return localRealm.where(RealmPlaylist::class.java)
+            //.equalTo("owner", user.value?.user?.id)
+            .findAllCopied()
+    }
 
+    private fun getMainPlaylistId(): String? {
+        return null
+    }
+
+    private suspend fun loadUserPlaylists() {
+        Log.d(TAG, "loading current user playlists")
+        withContext(Dispatchers.IO) {
+            userPlaylists = spotifyService.getCurrentUserPlaylists().items
+        }
+
+        Log.d(TAG, "[RESULT] loaded current user playlists")
+    }
+
+    private suspend fun prepareMainPlaylist() {
+        val id = getMainPlaylistId() ?: userPlaylists.firstOrNull()?.id
+
+        if (id == null) {
+            playlist.value = null
+            return
+        }
+
+        val localPlaylist = localRealm.where(RealmPlaylist::class.java)
+            .equalTo("_id", id)
+            .findFirstCopied()
+
+        val playlist = userPlaylists.find { it.id == id }
+
+        if (playlist != null && localPlaylist != null && playlist?.snapshot_id == localPlaylist?.snapshot_id) {
+            val p = (localPlaylist?.derealmify() as Playlist).wrap()
+            val i = playlists.value?.indexOfFirst { it.playlist?.id == id } ?: 0
+
+            playlists.value?.set(i, p)
+            this.playlist.value = p
+        } else {
+            val p = withContext(Dispatchers.IO) {
+                spotifyService.getPlaylist(user.value?.user?.id, id)
+            }.wrap()
+
+            localRealm.executeTransaction {
+                it.insertOrUpdate(p.playlist?.realmify() as RealmObject)
+            }
+
+            playlists.value?.add(p)
+            this.playlist.value = p
+        }
+    }
+
+    // call from ui
+    fun getPlaylists() = viewModelScope.launch {
+        loadUserPlaylists()
+
+        playlists.value = userPlaylists
+            .filter { it.owner.id == user.value?.user?.id }
+            .map {
+            Playlist().apply {
+                id = it.id
+                name = it.name
+                images = it.images
+            }.wrap()
+        }.toMutableList()
+    }
+
+    // the spotify web api can handle a maximum request size of 50 ids
+// TODO impl in SpotifyApi
+    private suspend fun splitLoad(
+        ids: List<String>,
+        batchSize: Int = 50,
+    ): MutableList<ArtistWrapper> {
         val artists = mutableListOf<ArtistWrapper>()
 
         ids.chunked(batchSize).forEach {
@@ -449,7 +534,7 @@ class ContentViewModel(
         playerStateListener.shutdown()
     }
 
-    // extension utils
+// extension utils
 
     // set track features of each track of a mutable list of track models
     private suspend fun MutableList<TrackModel>.injectFeatures() {

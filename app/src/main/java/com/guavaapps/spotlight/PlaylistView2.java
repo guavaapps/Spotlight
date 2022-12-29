@@ -11,16 +11,16 @@ import androidx.annotation.Nullable;
 
 import com.guavaapps.components.Components;
 
-public class PlaylistView extends View {
+public class PlaylistView2 extends View {
     private static final String TAG = "AlbumFragment";
 
     private static final int SIZE_DP = 128;
 
-    public PlaylistView (Context context) {
+    public PlaylistView2(Context context) {
         this (context, null);
     }
 
-    public PlaylistView (Context context, @Nullable AttributeSet attrs) {
+    public PlaylistView2(Context context, @Nullable AttributeSet attrs) {
         super (context, attrs);
 
         setLayoutParams (new ViewGroup.LayoutParams (Components.INSTANCE.getPx (context, SIZE_DP), Components.INSTANCE.getPx (context, SIZE_DP)));

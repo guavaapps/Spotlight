@@ -2,22 +2,22 @@ package com.guavaapps.spotlight
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.reflect.TypeToken
 import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
-import com.guavaapps.spotlight.Matcha.Companion.isPrimitive
-import com.guavaapps.spotlight.Matcha.Companion.realmify
-import com.guavaapps.spotlight.realm.RealmAlbum
-import com.guavaapps.spotlight.realm.RealmTrack
 import com.pixel.spotifyapi.Objects.Track
 import io.realm.*
 import io.realm.annotations.Ignore
-import io.realm.annotations.PrimaryKey
 import io.realm.annotations.RealmClass
 import io.realm.annotations.RealmField
 import io.realm.mongodb.*
 import io.realm.mongodb.mongo.MongoClient
 import io.realm.mongodb.mongo.MongoCollection
 import io.realm.mongodb.mongo.MongoDatabase
+import io.realm.mongodb.mongo.options.FindOneAndModifyOptions
+import io.realm.mongodb.mongo.options.FindOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.bson.Document
 import java.lang.annotation.Inherited
 import java.lang.annotation.Retention
@@ -104,13 +104,18 @@ class Match<E : RealmObject>(
     fun update(obj: E) {
         val document = obj.fromMatchaObject()
 
-        collection.updateOne(filter, document)
+        collection.updateOne(filter, document).get()
     }
 
     fun insert(obj: E) {
         val document = obj.fromMatchaObject()
 
-        collection.insertOne(document)
+        Log.e(TAG, "[INSERT] ${document.toJson()}")
+
+        collection.insertOne(document).getAsync {
+            Log.e(TAG,
+                "[INSERT] result -> ${if (it.isSuccess) "success" else "error {${it.error.message}"}")
+        }
     }
 
     fun insertAll(vararg obj: E) {
@@ -122,7 +127,15 @@ class Match<E : RealmObject>(
     fun upsert(obj: E) {
         val document = obj.fromMatchaObject()
 
-        collection.findOneAndReplace(filter, document)
+        val options = FindOneAndModifyOptions().apply {
+            upsert(true)
+        }
+
+        collection.findOneAndUpdate(
+            filter,
+            document,
+            options
+        ).get()
     }
 
     fun delete() {
@@ -180,9 +193,8 @@ class Matcha(
         get() = app.allUsers().values.toTypedArray()
         private set
 
-    fun getAllUsers(): MutableMap<String, User>? {
-        return app.allUsers()
-    }
+    val allUsers: MutableMap<String, User>?
+        get() = app.allUsers()
 
     init {
         Realm.init(context)//clicky clack clack cliciki  i click tap love cilimy tzp you
@@ -203,6 +215,8 @@ class Matcha(
     fun <E : RealmObject> where(clazz: Class<E>): Match<E> {
 //        val name = clazz.getAnnotation(MatchaClass::class.java)?.name ?: clazz.simpleName
         val name = clazz.getAnnotation(RealmClass::class.java)?.value ?: clazz.simpleName
+
+        Log.e(TAG, "[WHERE] class=$name")
 
         val collection = mongoDatabase.getCollection(name)
 
@@ -225,10 +239,7 @@ class Matcha(
             return matcha
         }
 
-        private fun isPrimitive(clazz: Class<*>) =
-            clazz.isPrimitive || Date::class.java.isAssignableFrom(clazz) || Number::class.java.isAssignableFrom(
-                clazz) || String::class.java.isAssignableFrom(clazz)
-
+        // TODO rename asObject
         fun <E> Document.asMatchaObject(clazz: Class<E>): E {
             val obj = clazz.newInstance() as E
 
@@ -264,6 +275,7 @@ class Matcha(
             return obj
         }
 
+        // TODO rename asDocument
         fun Any.fromMatchaObject(): Document {
             val clazz = this::class.java
             val obj = Document()
@@ -299,7 +311,7 @@ class Matcha(
 
         fun Any.realmify(
             realmClass: Class<*>? = null,
-            resolver: (Class<*>) -> Class<*>,
+            resolver: (Class<*>) -> Class<*> = ::resolveRealmObject,
         ): Any {
             val c = this::class.java
             val realmClass = realmClass ?: resolver(c)
@@ -316,12 +328,27 @@ class Matcha(
                 val r = realmClass.getDeclaredField(it.name)
                 r.isAccessible = true
 
-                if (isPrimitive(it.type)) {
+                val isBoolean = it.type.simpleName == "Boolean"
+
+                if (isPrimitive(it.type) || isBoolean) {
                     r.set(obj, v)
                 } else if (List::class.java.isAssignableFrom(it.type)) {
                     r.apply {
                         isAccessible = true
-                        set(obj, RealmList(*(v as MutableList<*>).toTypedArray()))
+
+                        val list = (v as List<*>).map {
+//                            if (it == null) return@map
+
+                            val listClass = it!!::class.java
+
+                            if (isPrimitive(listClass)) {
+                                it
+                            } else {
+                                it.realmify(resolver = resolver)
+                            }
+                        }
+
+                        set(obj, RealmList(*list.toTypedArray()))
                     }
                 }
                 // is map
@@ -334,6 +361,28 @@ class Matcha(
                         c.superclass.getDeclaredField(it.name)
                     }
 
+                    if (v::class.java.simpleName == "Pager") {
+                        val pagerClass = v::class.java
+
+                        val enc = pagerClass.enclosingClass
+
+                        f.toString()
+
+                        Log.e(TAG, "enc=$enc field=${f.declaringClass}")
+                    }
+
+                    if (v::class.java.simpleName == "Pager") {
+                        var pagerClass = if (f.declaringClass.simpleName == "Playlist") {
+                            Class.forName("com.guavaapps.spotlight.realm.RealmPlaylistTrackPager")
+                        } else {
+                            Class.forName("com.guavaapps.spotlight.realm.RealmTrackSimplePager")
+                        }
+
+                        r.set(obj, v.realmify(pagerClass, resolver))
+
+                        return@forEach
+                    }
+
                     r.set(obj, v.realmify(resolver(v::class.java), resolver))
                 }
             }
@@ -343,7 +392,7 @@ class Matcha(
 
         fun Any.derealmify(
             clazz: Class<*>? = null,
-            resolver: (Class<*>) -> Class<*>,
+            resolver: (Class<*>) -> Class<*> = ::resolveSpotifyObject,
         ): Any {
             val c = this::class.java//resolveProxy(this::class.java)
             val clazz = clazz ?: resolver(c)
@@ -355,10 +404,12 @@ class Matcha(
 
                 val v = it.get(this) ?: return@forEach
 
-                val r = clazz.allFields.find { field -> field.name == it.name }!!
+                val r = clazz.allFields.find { field -> field.name == it.name } ?: return@forEach
                 r.isAccessible = true
 
-                if (isPrimitive(it.type)) {
+                val isBoolean = it.type.simpleName == "Boolean"
+
+                if (isPrimitive(it.type) || isBoolean) {
                     r.set(obj, v)
                 } else if (RealmList::class.java.isAssignableFrom(it.type)) {
                     r.apply {
@@ -390,39 +441,61 @@ class Matcha(
                         c.superclass.getDeclaredField(it.name)
                     }
 
-                    r.set(obj, v.realmify(resolver(v::class.java), resolver))
+                    Log.e(TAG, "f - ${f.name}")
+                    Log.e(TAG, "v - ${v::class.java.simpleName}")
+
+                    if (v::class.java.simpleName.endsWith("Pager")) {
+                        //val pagerClass = if (f.declaringClass.simpleName == "RealmPlaylist") ""
+                        val pagerClass = Class.forName("com.pixel.spotifyapi.Objects.Pager")
+
+                        r.set(obj, v.derealmify (pagerClass, resolver))
+
+                        return@forEach
+                    }
+
+                    r.set(obj, v.derealmify(resolver(v::class.java), resolver))
                 }
             }
 
             return obj
         }
-
-        private fun resolveProxy(clazz: Class<*>): Class<*> {
-            return if (clazz.packageName == "io.realm") clazz.superclass else clazz
-        }
-    }
-
-    interface Resolver {
-        fun resolveClass(clazz: Class<*>): Class<*>
-    }
-
-    private object RealmResolver : Resolver {
-        override fun resolveClass(clazz: Class<*>) =
-            Class.forName("com.guavaapps.spotlight.realm.Realm${clazz.simpleName}")
-
-        fun resolveRealmList(clazz: Class<*>) {}
-    }
-}
-
-object SpotifyRealmifier {
-    fun Any.toRealm(): Any {
-        return this.realmify { Class.forName("Realm${this::class.java.simpleName}") }
-    }
-
-    fun <E : RealmObject> E.fromRealm(): Any {
-        return this.realmify { Class.forName(this::class.java.simpleName.removePrefix("Realm")) }
     }
 }
 
 val Class<*>.allFields
     get() = setOf(*this.fields, *this.declaredFields)
+
+private fun isPrimitive(clazz: Class<*>) =
+    clazz.isPrimitive || Boolean::class.java.isAssignableFrom(clazz) || Date::class.java.isAssignableFrom(
+        clazz) || Number::class.java.isAssignableFrom(
+        clazz) || String::class.java.isAssignableFrom(clazz)
+
+fun resolveRealmObject(clazz: Class<*>): Class<*> {
+    val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
+
+    return if (RealmObject::class.java.isAssignableFrom(clazz)) clazz.also {
+        Log.e(TAG,
+            "resolver - no change $it")
+    }
+    else if (clazz.simpleName == "Pager") {
+        val t = if (clazz.enclosingClass.simpleName == "RealmAlbum") {
+            "TrackSimple"
+        } else {
+            "PlaylistTrack"
+        }
+
+        Log.e(TAG, "type resolver - $t")
+//        val type = (clazz.genericSuperclass as ParameterizedType?)?.actualTypeArguments?.first()
+//        Log.e(TAG, "pager of type - ${type?.typeName}")
+        Class.forName("com.guavaapps.spotlight.realm.Realm${t}${clazz.simpleName}")
+    } else {
+        Class.forName("com.guavaapps.spotlight.realm.Realm${clazz.simpleName}")
+            .also { Log.e(TAG, "resolver - to $it") }
+    }
+}
+
+fun resolveSpotifyObject(clazz: Class<*>): Class<*> {
+    val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
+
+    return Class.forName("com.pixel.spotifyapi.Objects.${clazz.simpleName.removePrefix("Realm")}")
+}

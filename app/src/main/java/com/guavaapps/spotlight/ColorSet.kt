@@ -6,6 +6,8 @@ import android.util.Log
 import com.guavaapps.spotlight.ColorSet
 import androidx.palette.graphics.Palette
 import androidx.palette.graphics.Palette.Swatch
+import com.google.android.material.color.ColorRoles
+import com.google.android.material.color.MaterialColors
 import com.guavaapps.components.color.Argb
 import com.guavaapps.components.color.Hct
 
@@ -23,20 +25,38 @@ class ColorSet {
     var surfaceGradient = IntArray(2)
     var surfaceOverlay = 0
 
+    var color40 = 0
+    var color10 = 0
+
     companion object {
         private const val TAG = "ColorSet"
         fun create(bitmap: Bitmap?): ColorSet {
             val colorSet = ColorSet()
-            val builder = Palette.Builder(bitmap!!)
-            var swatch: Swatch?
-            if (builder.generate().dominantSwatch.also { swatch = it } == null) {
-                // palette builder adds a lightness filter by default
-                // if bitmap too dark or light asRealmObject have a dominant swatch clear the filter
-                swatch = builder.clearFilters()
-                    .generate()
-                    .dominantSwatch
+
+            var swatch: Swatch? = null
+            var builder: Palette.Builder? = null
+
+            if (bitmap != null) {
+                builder = Palette.Builder(bitmap)
+
+                if (builder.generate().dominantSwatch.also { swatch = it } == null) {
+                    // palette builder adds a lightness filter by default
+                    // if bitmap too dark or light asRealmObject have a dominant swatch clear the filter
+                    swatch = builder.clearFilters()
+                        .generate()
+                        .dominantSwatch
+                }
             }
-            val color = swatch!!.rgb
+
+            val color = swatch?.rgb ?: Color.BLACK
+
+            val color40 = Hct.fromInt(color)
+            color40.tone = 40f
+            colorSet.color40 = color40.toInt()
+
+            val color10 = Hct.fromInt(color)
+            color10.tone = 10f
+            colorSet.color10 = color10.toInt()
 
             val primaryColor = Hct.fromInt(color)
             primaryColor.tone = 90f
@@ -61,7 +81,7 @@ class ColorSet {
 
             colorSet.surface[0] = surfaceColor1.toInt()
 
-            val nextDominant = findNextDominant(builder.generate())!!.rgb
+            val nextDominant = findNextDominant(builder?.generate())?.rgb ?: Color.BLACK
             val surfaceColor2: Hct = Hct.fromInt(nextDominant)
             surfaceColor2.chroma = surfaceColor1.chroma
             surfaceColor2.tone = 10f
@@ -71,7 +91,9 @@ class ColorSet {
             return colorSet
         }
 
-        private fun findNextDominant(palette: Palette): Swatch? {
+        private fun findNextDominant(palette: Palette?): Swatch? {
+            palette ?: return null
+
             val swatches = palette.swatches
             val dominant = palette.dominantSwatch!!.rgb
             var next = palette.dominantSwatch

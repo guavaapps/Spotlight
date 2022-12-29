@@ -1,17 +1,12 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
+import androidx.appcompat.widget.ButtonBarLayout
+import com.google.gson.internal.LinkedTreeMap
 import com.guavaapps.spotlight.MatchWith
-import com.guavaapps.spotlight.Matcha
-import com.guavaapps.spotlight.Matcha.Companion.derealmify
-import com.guavaapps.spotlight.MatchaClass
-import com.pixel.spotifyapi.Objects.Track
-import io.realm.RealmAny
-import io.realm.RealmDictionary
-import io.realm.RealmList
-import io.realm.RealmObject
+import com.pixel.spotifyapi.Objects.*
+import io.realm.*
 import io.realm.annotations.*
-import org.bson.Document
 import org.bson.types.ObjectId
 import java.nio.ByteBuffer
 import java.util.*
@@ -20,27 +15,35 @@ import java.util.*
 open class RealmObjectsModule
 
 // user
-@RealmClass ("User")
+@RealmClass("User")
 open class AppUser(
     @PrimaryKey
     @RealmField("_id")
     var spotify_id: String = "",
+    //var email: String? = null,
     var date_signed_up: Date? = null,
     var last_login: Date? = null,
     var locale: String? = null,
+    var selectedPlaylistId: String? = null,
     var timeline: RealmList<TrackModel> = RealmList(),
 ) : RealmObject()
 
 @RealmClass(embedded = true)
 open class TrackModel(
-    //    var spotify_id: String? = null
     var id: String? = null,
     var uri: String? = null,
+    //var genres: RealmList<String> = RealmList(),
     @Required
     var timestamp: Long? = null,
     @Required
     var features: RealmList<Float> = RealmList(),
 ) : RealmObject()
+
+fun d (){
+    val t = Track ()
+
+
+}
 
 // model
 open class Model(
@@ -62,8 +65,49 @@ open class ModelParam(
     var shape: RealmList<Int> = RealmList(),
 ) : RealmObject() {}
 
+@MatchWith([UserPublic::class])
+open class RealmUserPublic(
+    var display_name: String? = null,
+    var external_urls: RealmDictionary<String>? = null,
+    var followers: RealmFollowers? = null,
+    var href: String? = null,
+    @RealmField ("_id")
+    var id: String? = null,
+    var images: RealmList<RealmImage>? = null,
+    var type: String? = null,
+    var uri: String? = null,
+) : RealmObject()
+
+
+@MatchWith([Playlist::class])
+open class RealmPlaylist(
+    var collaborative: Boolean? = null,
+    var external_urls: RealmDictionary<String>? = null,
+    var href: String? = null,
+    @RealmField ("_id")
+    var id: String? = null,
+    var images: RealmList<RealmImage?>? = null,
+    var name: String? = null,
+    var owner: RealmUserPublic? = null,
+    var is_public: Boolean? = null,
+    var snapshot_id: String? = null,
+    var type: String? = null,
+    var uri: String? = null,
+    var description: String? = null,
+    var followers: RealmFollowers? = null,
+    var tracks: RealmPlaylistTrackPager? = null,
+) : RealmObject()
+
+@RealmClass (embedded = true)
+open class RealmPlaylistTrack(
+    var added_at: String? = null,
+    var added_by: RealmUserPublic? = null,
+    var track: RealmTrack? = null,
+    var is_local: Boolean? = null,
+): RealmObject ()
+
 // spotify
-@MatchWith ([Track::class])
+@MatchWith([Track::class])
 open class RealmTrack(
 ) : RealmObject() {
     @PrimaryKey
@@ -156,7 +200,7 @@ fun ky(realmBitmap: RealmBitmap) {
         ByteBuffer.wrap(realmBitmap.bytes)
     )
 }
-
+@MatchWith([Album::class])
 open class RealmAlbum : RealmObject() {
     var album_type: String? = null
     var available_markets: RealmList<String>? = null
@@ -178,7 +222,7 @@ open class RealmAlbum : RealmObject() {
     var popularity: Int? = null
     var release_date: String? = null
     var release_date_precision: String? = null
-    var tracks: RealmPager? = null
+    var tracks: RealmTrackSimplePager? = null
 }
 
 @RealmClass(embedded = true)
@@ -229,10 +273,32 @@ open class RealmImage : RealmObject() {
     var url: String? = null
 }
 
+//@RealmClass(embedded = true)
+//open class RealmPager : RealmObject() {
+//    var href: String? = null
+//    var items: RealmList<RealmObject> = RealmList()
+//    var limit = 0
+//    var next: String? = null
+//    var offset = 0
+//    var previous: String? = null
+//    var total = 0
+//}
+
 @RealmClass(embedded = true)
-open class RealmPager : RealmObject() {
+open class RealmTrackSimplePager : RealmObject() {
     var href: String? = null
-    var items: RealmList<RealmAny> = RealmList()
+    var items: RealmList<RealmTrackSimple> = RealmList()
+    var limit = 0
+    var next: String? = null
+    var offset = 0
+    var previous: String? = null
+    var total = 0
+}
+
+@RealmClass(embedded = true)
+open class RealmPlaylistTrackPager : RealmObject() {
+    var href: String? = null
+    var items: RealmList<RealmPlaylistTrack> = RealmList()
     var limit = 0
     var next: String? = null
     var offset = 0

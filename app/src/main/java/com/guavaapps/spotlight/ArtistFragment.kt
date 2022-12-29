@@ -4,25 +4,16 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.os.Bundle
-import android.util.AttributeSet
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.annotation.IdRes
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.constraintlayout.widget.ConstraintSet
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.fragment.app.viewModels
-import androidx.recyclerview.widget.RecyclerView
 import com.guavaapps.components.listview.ListView
+import com.guavaapps.components.listview.NestedScrollableHost
 import com.guavaapps.components.timestring.TimeString
-import com.guavaapps.spotlight.R
 import com.pixel.spotifyapi.Objects.Artist
-import com.pixel.spotifyapi.Objects.ArtistSimple
-import org.w3c.dom.Text
-import kotlin.math.min
 
 private const val TAG = "ArtistFragment"
 

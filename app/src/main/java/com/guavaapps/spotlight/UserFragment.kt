@@ -1,68 +1,58 @@
 package com.guavaapps.spotlight
 
-import android.animation.Animator
-import android.animation.AnimatorSet
-import android.animation.TimeInterpolator
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.*
 import android.net.Uri
-import android.os.Build.VERSION
-import android.os.Build.VERSION_CODES
 import android.os.Bundle
 import android.util.Log
-import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
+import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.LinearInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
-import androidx.annotation.*
 import androidx.core.graphics.Insets
-import androidx.core.graphics.PathParser
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.animation.PathInterpolatorCompat
 import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.interpolator.view.animation.FastOutLinearInInterpolator
-import androidx.interpolator.view.animation.FastOutSlowInInterpolator
-import androidx.interpolator.view.animation.LinearOutSlowInInterpolator
 import androidx.navigation.fragment.NavHostFragment
-import androidx.transition.*
-import com.google.android.material.animation.AnimatorSetCompat
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.shape.AbsoluteCornerSize
-import com.google.android.material.shape.CornerSize
-import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
+import com.guavaapps.components.Components.getPxF
+import com.guavaapps.components.color.Hct
 import com.guavaapps.components.listview.ListView
 import com.guavaapps.spotlight.ColorSet.Companion.create
-import com.pixel.spotifyapi.Objects.Playlist
-import com.pixel.spotifyapi.Objects.PlaylistSimple
+import java.net.CookieHandler
 
 class UserFragment : Fragment(R.layout.fragment_user) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
-    private var mInsets: Insets? = null
-    private val mPlaylists = LinkedHashMap<PlaylistWrapper, View>()
-    private lateinit var mUserView: ImageView
-    private lateinit var mUserNameView: TextView
-    private lateinit var mSpotifyButton: MaterialButton
-    private lateinit var mPlaylistListView: ListView
+    private var insets: Insets? = null
+
+    private lateinit var content: ViewGroup
+
+    private lateinit var userView: ImageView
+    private lateinit var userNameView: TextView
+    private lateinit var userIdView: TextView
+    private lateinit var spotifyButton: MaterialButton
+
+    private lateinit var listView: ListView
+    private val views: MutableList<View> = mutableListOf()
+    private val selectedView: View? = null
+
+    private val addButton: MaterialButton by lazy { PlaylistView.createAddButton(requireContext()) {} }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val animDuration =
-            resources.getInteger(com.google.android.material.R.integer.material_motion_duration_long_2).toLong()
+            resources.getInteger(com.google.android.material.R.integer.material_motion_duration_long_2)
+                .toLong()
 
         val transform = MaterialContainerTransform().apply {
 //            interpolator = AnticipateOvershootInterpolator(0.5f)
@@ -125,7 +115,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 //            startContainerColor = Color.TRANSPARENT
 //            endContainerColor = Color.TRANSPARENT
 //        }
-
+//
 //        returnTransition = MaterialContainerTransform().apply {
 //            // Manually add the Views to be shared since this is not a standard Fragment to
 //            // Fragment shared element transition.
@@ -147,117 +137,148 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
-        mUserView = view.findViewById(R.id.user)
-        mUserNameView = view.findViewById(R.id.user_name)
-        mSpotifyButton = view.findViewById(R.id.spotify)
-        mPlaylistListView = view.findViewById(R.id.list_view)
-//        mUserView!!.setOutlineProvider(object : ViewOutlineProvider() {
-//            override fun getOutline(view: View, outline: Outline) {
-//                view.clipToOutline = true
-//                outline.setOval(0, 0, view.width, view.height)
-//            }
-//        })
-        view.viewTreeObserver.addOnGlobalLayoutListener(object : OnGlobalLayoutListener {
+
+        content = view.findViewById(R.id.content)
+
+        userView = view.findViewById(R.id.user)
+        userNameView = view.findViewById(R.id.user_name)
+        userIdView = view.findViewById(R.id.user_id)
+        spotifyButton = view.findViewById(R.id.spotify)
+
+        listView = view.findViewById(R.id.list_view)
+
+        listView.setOnScrollChangeListener { view, _, _, _, _ ->
+            val scrollY = listView.computeVerticalScrollOffset()
+
+            val MAX = getPxF(requireContext(), 4)
+            val e = if (scrollY >= MAX) 1f
+            else scrollY / MAX
+
+            val start = Hct.fromInt(Color.RED)
+            val (sHue, sChroma, sTone) = with(start) {
+                Triple(hue, chroma, tone)
+            }
+
+            var end = Hct.fromInt(Color.RED)
+            val (eHue, eChroma, eTone) = with(end) {
+                Triple(hue, chroma, tone)
+            }
+
+            val hue = sHue + (eHue - sHue) * e
+            val chroma = sChroma + (eChroma - sChroma) * e
+            val tone = sTone + (eTone - sTone) * e
+
+            val c = Hct.fromInt(0)
+            c.hue = hue
+            c.chroma = chroma
+            c.tone = tone
+
+            content.setBackgroundColor(c.toInt())
+
+            Log.e(TAG, "scrollY=$scrollY e=$e elevation=${(4 * e).toInt()}")
+        }
+
+        view.viewTreeObserver.addOnGlobalLayoutListener(object :
+            OnGlobalLayoutListener {
             override fun onGlobalLayout() {
-                val viewWidth = view.width
-                val viewHeight = view.height
-                mInsets = ViewCompat.getRootWindowInsets(view)!!
-                    .getInsets(WindowInsetsCompat.Type.systemBars())
-                val params = mUserView!!.getLayoutParams() as MarginLayoutParams
-                params.topMargin = mInsets!!.top + getPx(this@UserFragment.requireContext(), 24)
-                mUserView!!.setLayoutParams(params)
                 view.viewTreeObserver.removeOnGlobalLayoutListener(this)
+
+                insets = ViewCompat.getRootWindowInsets(view)!!
+                    .getInsets(WindowInsetsCompat.Type.systemBars())
+
+                with(userView.layoutParams as MarginLayoutParams) {
+                    topMargin = insets!!.top + getPx(this@UserFragment.requireContext(), 24)
+
+                    userView.layoutParams = this
+                }
             }
         })
+
+        viewModel.playlists.observe(viewLifecycleOwner) {
+            views.clear()
+            listView.clear()
+
+            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
+
+            })
+
+            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
+
+            })
+
+            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
+
+            })
+
+            listView.add(listOf(
+                *views.toTypedArray(),
+                //PlaylistView.createAddButton(requireContext()) {}.also { addButton = it }
+                addButton
+            ))
+
+            addButton.insetBottom = ViewCompat.getRootWindowInsets(view)
+                ?.getInsets(WindowInsetsCompat.Type.systemBars())
+                ?.bottom ?: 0
+
+            applyColorsToPlaylistListView(viewModel.user.value?.bitmap!!)
+        }
+
         viewModel.user.observe(viewLifecycleOwner) { userWrapper ->
-            mUserView.setImageBitmap(userWrapper.bitmap)
-            mUserNameView.setText(userWrapper.user.display_name)
-            mSpotifyButton.setOnClickListener(View.OnClickListener { v: View? ->
+            userView.setImageBitmap(userWrapper.bitmap)
+            userNameView.text = userWrapper.user.display_name
+
+            userIdView.text = userWrapper.user?.id
+
+
+            spotifyButton.setOnClickListener {
                 val intent = Intent(Intent.ACTION_VIEW)
                 intent.data = Uri.parse(userWrapper.user.uri)
                 intent.putExtra(Intent.EXTRA_REFERRER,
                     "android-app://" + requireContext().packageName)
                 startActivity(intent)
-            })
-//            viewModel.spotifyService.value!!
-//                .getCurrentUserPlaylists(object : Callback<Pager<PlaylistSimple>> {
-//                    override fun success(
-//                        playlistSimplePager: Pager<PlaylistSimple>,
-//                        response: Response,
-//                    ) {
-//                        Executors.newSingleThreadExecutor().execute {
-//                            val items: MutableList<View> = ArrayList()
-//                            for (playlistSimple in playlistSimplePager.items) {
-//                                if (playlistSimple.owner.id != userWrapper.user.id) continue
-//                                val bitmap = from(playlistSimple.images[0].url)
-//                                val playlistWrapper = PlaylistWrapper(playlistSimple, bitmap)
-//                                val v = LayoutInflater.from(context)
-//                                    .inflate(R.layout.playlist_item, null, false)
-//                                v.layoutParams = ViewGroup.LayoutParams(-1, -2)
-//                                val bitmapView = v.findViewById<ImageView>(R.id.bitmap)
-//                                val nameView = v.findViewById<TextView>(R.id.name)
-//                                bitmapView.setImageBitmap(bitmap)
-//                                nameView.text = playlistSimple.name
-//                                val d = TypedValue()
-//                                context!!.theme.resolveAttribute(android.R.attr.selectableItemBackground,
-//                                    d,
-//                                    true)
-//                                v.foreground = resources.getDrawable(d.resourceId, context!!.theme)
-//                                v.setOnClickListener { v1: View? -> }
-//                                mPlaylists[playlistWrapper] = v
-//                                items.add(v)
-//                            }
-//                            val views = arrayOfNulls<View>(mPlaylists.size)
-//                            mPlaylists.values.toTypedArray()
-//                            Handler.createAsync(Looper.getMainLooper())
-//                                .post { mPlaylistListView.add(items) }
-//                        }
-//                    }
-//
-//                    override fun failure(error: RetrofitError) {}
-//                })
+            }
             applyColorSet(userWrapper.bitmap!!)
         }
-    }
 
-    private fun logDumpPlaylist(playlist: Playlist) {
-        val id = playlist.id
-        val name = playlist.name
-        val owner = playlist.owner.display_name
-        val isCollab = playlist.collaborative
-        val isPublic = playlist.is_public
-        val p = Playlist()
-        Log.e(TAG, "-------- playlist log dump --------")
-        Log.e(TAG, "name: $name")
-        Log.e(TAG, "id: $id")
-        Log.e(TAG, "owner: $owner")
-        Log.e(TAG, "isCollab: $isCollab")
-        Log.e(TAG, "isPublic: $isPublic")
-        Log.e(TAG, "-------- --------")
-    }
-
-    private fun logDumpPlaylistSimple(playlistSimple: PlaylistSimple) {
-        val id = playlistSimple.id
-        val name = playlistSimple.name
-        val owner = playlistSimple.owner.display_name
-        val isCollab = playlistSimple.collaborative
-        val isPublic = playlistSimple.is_public
-        val p = Playlist()
-        Log.e(TAG, "-------- playlist log dump --------")
-        Log.e(TAG, "name: $name")
-        Log.e(TAG, "id: $id")
-        Log.e(TAG, "owner: $owner")
-        Log.e(TAG, "isCollab: $isCollab")
-        Log.e(TAG, "isPublic: $isPublic")
-        Log.e(TAG, "-------- --------")
+        viewModel.getPlaylists()
     }
 
     private fun applyColorSet(bitmap: Bitmap) {
         val colorSet = create(bitmap)
-        mUserNameView!!.setTextColor(colorSet.primary)
-        mSpotifyButton!!.setBackgroundColor(colorSet.primary)
-        mSpotifyButton!!.setTextColor(colorSet.text)
-        mSpotifyButton!!.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+
+        requireView().setBackgroundColor(colorSet.primary)
+
+        userNameView.setTextColor(colorSet.text)
+        userIdView.setTextColor(colorSet.text)
+        spotifyButton.setBackgroundColor(colorSet.color40)
+
+        val buttonTextColor = with(Hct.fromInt(colorSet.primary)) {
+            tone = 100f
+            toInt()
+        }
+
+        spotifyButton.setTextColor(buttonTextColor)
+
+        spotifyButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+    }
+
+    private fun applyColorsToPlaylistListView(bitmap: Bitmap) {
+        val colorSet = create(bitmap)
+
+        views.forEach {
+            it.setBackgroundColor(colorSet.primary)
+            it.findViewById<TextView>(R.id.name).setTextColor(colorSet.text)
+        }
+
+        val t = with(Hct.fromInt(colorSet.primary)) {
+            tone = 100f
+            toInt()
+        }
+
+        views.firstOrNull()?.setBackgroundColor(colorSet.color40)
+        views.firstOrNull()?.elevation = getPxF(requireContext(), 2)
+        views.firstOrNull()?.findViewById<TextView>(R.id.name)
+            ?.setTextColor(t)
     }
 
     companion object {

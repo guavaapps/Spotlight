@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import io.realm.Realm
+import io.realm.RealmConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
@@ -20,7 +21,7 @@ class Ky : Application() {
     lateinit var userRepository: UserRepository
         private set
 
-    lateinit var localRealm: LocalRealm
+    lateinit var localRealm: Realm
         private set
 
     lateinit var matcha: Matcha
@@ -42,7 +43,14 @@ class Ky : Application() {
             matcha
         )
 
-        localRealm = LocalRealm(this)
+        val config = RealmConfiguration.Builder()
+            .name("Spotlight")
+            .allowQueriesOnUiThread(true)
+            .allowWritesOnUiThread(true)
+            .deleteRealmIfMigrationNeeded()
+            .build()
+
+        localRealm = Realm.getInstance(config)
     }
 
     override fun onTerminate() {

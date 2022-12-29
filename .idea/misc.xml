@@ -18,7 +18,9 @@
         <entry key="app/src/main/res/layout/fragment_content2.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_content_more.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_extra.xml" value="0.13229166666666667" />
+        <entry key="app/src/main/res/layout/fragment_playlist.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_playlists.xml" value="0.13229166666666667" />
+        <entry key="app/src/main/res/layout/fragment_playlitsts.xml" value="0.13125" />
         <entry key="app/src/main/res/layout/fragment_track.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_track_large.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_track_small.xml" value="0.13229166666666667" />
@@ -34,6 +36,7 @@
         <entry key="app/src/main/res/layout/playlist_list_item_layout.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/playlist_selector_list_item.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/track_view.xml" value="0.13125" />
+        <entry key="app/src/main/res/layout/track_view_item.xml" value="0.19610507246376813" />
       </map>
     </option>
   </component>

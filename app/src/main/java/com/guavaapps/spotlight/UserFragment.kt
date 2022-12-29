@@ -1,8 +1,11 @@
 package com.guavaapps.spotlight
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.*
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -14,6 +17,7 @@ import android.view.ViewTreeObserver.OnGlobalLayoutListener
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
+import androidx.annotation.CallSuper
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -21,10 +25,12 @@ import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.NavHostFragment
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
 import com.guavaapps.components.Components.getPxF
+import com.guavaapps.components.color.Argb
 import com.guavaapps.components.color.Hct
 import com.guavaapps.components.listview.ListView
 import com.guavaapps.spotlight.ColorSet.Companion.create
@@ -36,16 +42,27 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 
     private lateinit var content: ViewGroup
 
+    private var colorSet = ColorSet()
+
+    // user
     private lateinit var userView: ImageView
     private lateinit var userNameView: TextView
     private lateinit var userIdView: TextView
     private lateinit var spotifyButton: MaterialButton
 
+    // playlists
     private lateinit var listView: ListView
     private val views: MutableList<View> = mutableListOf()
-    private val selectedView: View? = null
+    private var selectedView: View? = null
 
     private val addButton: MaterialButton by lazy { PlaylistView.createAddButton(requireContext()) {} }
+
+    // animators
+    private var viewAnimator: ValueAnimator? = null
+    private var prevAnimator: ValueAnimator? = null
+
+    private var viewTextAnimator: ValueAnimator? = null
+    private var prevTextAnimator: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,30 +167,20 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         listView.setOnScrollChangeListener { view, _, _, _, _ ->
             val scrollY = listView.computeVerticalScrollOffset()
 
-            val MAX = getPxF(requireContext(), 4)
+            val MAX = getPxF(requireContext(), 24)
             val e = if (scrollY >= MAX) 1f
             else scrollY / MAX
 
-            val start = Hct.fromInt(Color.RED)
-            val (sHue, sChroma, sTone) = with(start) {
-                Triple(hue, chroma, tone)
-            }
+            val start = Hct.fromInt(colorSet.primary).toInt()
+            var end = Argb.from(colorSet.tertiary).apply {
+                red = 100f
+                alpha = 255f
+            }.toInt()
+            val a = ArgbEvaluator()
+            val c = a.evaluate(e, start, end) as Int
 
-            var end = Hct.fromInt(Color.RED)
-            val (eHue, eChroma, eTone) = with(end) {
-                Triple(hue, chroma, tone)
-            }
-
-            val hue = sHue + (eHue - sHue) * e
-            val chroma = sChroma + (eChroma - sChroma) * e
-            val tone = sTone + (eTone - sTone) * e
-
-            val c = Hct.fromInt(0)
-            c.hue = hue
-            c.chroma = chroma
-            c.tone = tone
-
-            content.setBackgroundColor(c.toInt())
+            content.setBackgroundColor(c)
+            content.elevation = e * getPx(requireContext(), 4)
 
             Log.e(TAG, "scrollY=$scrollY e=$e elevation=${(4 * e).toInt()}")
         }
@@ -198,8 +205,9 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             views.clear()
             listView.clear()
 
-            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
-
+            views.addAll(PlaylistView.createAll(requireContext(), it) { view, playlist ->
+                selectView(selectedView, view)
+                selectedView = view
             })
 
             views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
@@ -209,8 +217,14 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
 
             })
+
+            val placeholderView = View(requireContext()).apply {
+                layoutParams = ViewGroup.LayoutParams(-1, content.height)
+                setBackgroundColor(Color.TRANSPARENT)
+            }
 
             listView.add(listOf(
+                placeholderView,
                 *views.toTypedArray(),
                 //PlaylistView.createAddButton(requireContext()) {}.also { addButton = it }
                 addButton
@@ -260,6 +274,8 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         spotifyButton.setTextColor(buttonTextColor)
 
         spotifyButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+
+        this.colorSet = colorSet
     }
 
     private fun applyColorsToPlaylistListView(bitmap: Bitmap) {
@@ -275,10 +291,82 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             toInt()
         }
 
-        views.firstOrNull()?.setBackgroundColor(colorSet.color40)
-        views.firstOrNull()?.elevation = getPxF(requireContext(), 2)
-        views.firstOrNull()?.findViewById<TextView>(R.id.name)
-            ?.setTextColor(t)
+//        views.firstOrNull()?.setBackgroundColor(colorSet.color40)
+//        views.firstOrNull()?.elevation = getPxF(requireContext(), 2)
+//        views.firstOrNull()?.findViewById<TextView>(R.id.name)
+//            ?.setTextColor(t)
+    }
+
+    private fun selectView(prev: View?, view: View) {
+        if (viewAnimator != null) viewAnimator?.cancel()
+
+        if (prev != null) {
+            val prev = prev.findViewById<View>(R.id.content)
+            val prevNameView = prev.findViewById<TextView>(R.id.name)
+
+            val prevStart = (prev.background as ColorDrawable?)?.color ?: Color.TRANSPARENT
+            val prevEnd = Color.TRANSPARENT
+
+            val prevTextStart = prevNameView.textColors.defaultColor
+            val prevTextEnd = colorSet.text
+
+//            prev.setBackgroundColor(prevEnd)
+
+            // vincent
+            prevAnimator = ValueAnimator.ofObject(ArgbEvaluator(), prevStart, prevEnd)
+            with(prevAnimator!!) {
+                duration = 200
+                addUpdateListener {
+                    prev.setBackgroundColor(it.animatedValue as Int)
+                }
+
+                start()
+            }
+
+            prevTextAnimator = ValueAnimator.ofObject(ArgbEvaluator(), prevTextStart, prevTextEnd)
+            with(prevTextAnimator!!) {
+                duration = 200
+                addUpdateListener {
+                    prevNameView.setBackgroundColor(it.animatedValue as Int)
+                }
+
+                start()
+            }
+        }
+
+        val view = view.findViewById<View>(R.id.content)
+        val nameView = view.findViewById<TextView>(R.id.name)
+
+        val start = (view.background as ColorDrawable?)?.color ?: Color.TRANSPARENT
+        val end = colorSet.color40
+
+        val textStart = nameView.textColors.defaultColor
+        val textEnd = with(Hct.fromInt(colorSet.primary)) {
+            tone = 100f
+            toInt()
+        }
+
+//        view.setBackgroundColor(end)
+
+        viewAnimator = ValueAnimator.ofObject(ArgbEvaluator(), start, end)
+        with(viewAnimator!!) {
+            duration = 200
+            addUpdateListener {
+                view.setBackgroundColor(it.animatedValue as Int)
+            }
+
+            start()
+        }
+
+        viewTextAnimator = ValueAnimator.ofObject(ArgbEvaluator(), textStart, textEnd)
+        with(viewTextAnimator!!) {
+            duration = 200
+            addUpdateListener {
+                nameView.setBackgroundColor(it.animatedValue as Int)
+            }
+
+            start()
+        }
     }
 
     companion object {

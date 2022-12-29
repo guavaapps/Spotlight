@@ -231,7 +231,7 @@ object PlaylistView {
                 .mutate()
 
         view.background = ripple
-        view.setBackgroundColor(Color.RED)
+//        view.setBackgroundColor(Color.RED)
 
         view.clipToOutline = true
         view.outlineProvider = object : ViewOutlineProvider() {

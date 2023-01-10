@@ -18,6 +18,8 @@ class DLSTMPModel(model: File) {
     fun getNext(timeline: Array<FloatArray>): FloatArray {
         interpreter.allocateTensors()
 
+        //
+
 //        checkInputShape(interpreter, timeline)
 
         val output = arrayOf(

@@ -2,9 +2,9 @@ package com.guavaapps.spotlight
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.reflect.TypeToken
 import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
 import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
+import com.guavaapps.spotlight.realm.RealmTrack
 import com.pixel.spotifyapi.Objects.Track
 import io.realm.*
 import io.realm.annotations.Ignore
@@ -15,9 +15,6 @@ import io.realm.mongodb.mongo.MongoClient
 import io.realm.mongodb.mongo.MongoCollection
 import io.realm.mongodb.mongo.MongoDatabase
 import io.realm.mongodb.mongo.options.FindOneAndModifyOptions
-import io.realm.mongodb.mongo.options.FindOptions
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.bson.Document
 import java.lang.annotation.Inherited
 import java.lang.annotation.Retention
@@ -189,13 +186,6 @@ class Matcha(
         get() = app.currentUser()
         private set
 
-    var users: Array<User>? = null
-        get() = app.allUsers().values.toTypedArray()
-        private set
-
-    val allUsers: MutableMap<String, User>?
-        get() = app.allUsers()
-
     init {
         Realm.init(context)//clicky clack clack cliciki  i click tap love cilimy tzp you
 
@@ -214,7 +204,14 @@ class Matcha(
 
     fun <E : RealmObject> where(clazz: Class<E>): Match<E> {
 //        val name = clazz.getAnnotation(MatchaClass::class.java)?.name ?: clazz.simpleName
-        val name = clazz.getAnnotation(RealmClass::class.java)?.value ?: clazz.simpleName
+        val name =
+            clazz.getAnnotation(RealmClass::class.java)?.value?.ifEmpty { null } ?: clazz.simpleName
+
+        val annotation = clazz.getAnnotation(RealmClass::class.java)
+        val value = annotation?.value
+
+        Log.e(TAG,
+            "where - annotation=$annotation value=$value has=${clazz.isAnnotationPresent(RealmClass::class.java)}")
 
         Log.e(TAG, "[WHERE] class=$name")
 
@@ -243,7 +240,8 @@ class Matcha(
         fun <E> Document.asMatchaObject(clazz: Class<E>): E {
             val obj = clazz.newInstance() as E
 
-            Log.e(TAG, "document - $this")
+            Log.e(TAG,
+                "                                                                                                                                                                                                                                                                                                                                                  n")
 
             clazz.declaredFields.forEach {
                 it.isAccessible = true
@@ -251,6 +249,7 @@ class Matcha(
 
                 if (isPrimitive(it.type)) {
                     it.set(obj, this.get(fieldName, it.type))
+
                 } else if (List::class.java.isAssignableFrom(it.type)) {
                     val fieldClass =
                         (it.genericType as ParameterizedType).actualTypeArguments.first() as Class<*>
@@ -258,7 +257,23 @@ class Matcha(
                     Log.e(TAG, "fieldName=$fieldName fieldClass=$fieldClass")
 
                     if (isPrimitive(fieldClass)) {
-                        val objects = this.get(fieldName) as List<*>
+                        val objects = (this.get(fieldName) as List<*>).map {
+                            if (it != null) {
+                                val valueClass = it::class.java
+
+                                val methodName =
+                                    if (fieldClass.simpleName == "Integer") "int" else fieldClass.simpleName.lowercase()
+
+                                val converter =
+                                    valueClass.getMethod("${methodName}Value")
+
+                                val convertedValue = converter.invoke(it)
+
+                                return@map convertedValue
+                            }
+
+                            return@map null
+                        }
 
                         it.set(obj, RealmList(*objects.toTypedArray()))
                     } else {
@@ -448,7 +463,7 @@ class Matcha(
                         //val pagerClass = if (f.declaringClass.simpleName == "RealmPlaylist") ""
                         val pagerClass = Class.forName("com.pixel.spotifyapi.Objects.Pager")
 
-                        r.set(obj, v.derealmify (pagerClass, resolver))
+                        r.set(obj, v.derealmify(pagerClass, resolver))
 
                         return@forEach
                     }
@@ -498,4 +513,79 @@ fun resolveSpotifyObject(clazz: Class<*>): Class<*> {
     val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
 
     return Class.forName("com.pixel.spotifyapi.Objects.${clazz.simpleName.removePrefix("Realm")}")
+}
+
+object Mapper {
+    fun Any.map(to: Class<*>, vararg constructor: Any) {
+        val clazz = this::class.java
+        val obj = to.getConstructor(
+            *constructor.map { it::class.java }
+                .toTypedArray()
+        )
+            .newInstance()
+
+        val fields = clazz.allFields.map {
+            it.isAccessible = true
+
+            val type = it.type
+            val name = it.name
+            val value = it.get(this)
+
+            val field = to.allFields.find { it.name == name } ?: return@map
+
+            val isCollection = Collection::class.java.isAssignableFrom(type)
+            val isMap = Map::class.java.isAssignableFrom(type)
+
+            if (isCollection) {
+                val itemType = (it.genericType as ParameterizedType).actualTypeArguments
+                    .first()
+
+                val collection = Collection::class.java.cast(value)
+
+                val targetType = field.type
+                val targetValue = targetType.newInstance()
+
+                val isTargetCollection = Collection::class.java.isAssignableFrom(type)
+
+                if (isTargetCollection) {
+                    val addAllMethod = targetType.getMethod("addAll")
+                    addAllMethod.invoke(targetValue, collection)
+
+                    val targetAsCollection = targetValue as Collection<*>
+
+                    Log.e(TAG, "target as collection - ${targetAsCollection.joinToString()}")
+                }
+            }
+        }
+
+        Log.e(TAG, fields.joinToString("\n"))
+    }
+
+    fun d() {
+        val obj = Track().apply {
+            id = "track:id"
+            name = "track:name"
+        }
+
+        val realmObj = RealmTrack().apply {
+            id = "track:id"
+            name = "track:name"
+        }
+
+
+        val realmList = RealmList("obj1", "fdjskhfkj")
+        val coll = realmList as MutableCollection<String>
+
+        val mapped = realmList.map(RealmList::class.java)
+
+        Log.e(TAG, "realm list - ${coll.joinToString()}")
+    }
+}
+
+class CollectionToListTypeAdapter<T> : TypeAdapter<Collection<T>, List<T>>() {
+    override fun convert(obj: Collection<T>) = List(obj.size) { obj.iterator().next() }
+}
+
+abstract class TypeAdapter<T, R>() {
+    abstract fun convert(obj: T): R
 }

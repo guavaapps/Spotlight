@@ -1,34 +1,34 @@
 package com.guavaapps.spotlight
 
 import android.animation.ArgbEvaluator
-import com.guavaapps.components.Components.getPx
-import com.guavaapps.spotlight.ColorSet.Companion.create
-import com.google.android.material.tabs.TabLayout
-import androidx.viewpager2.widget.ViewPager2
+import android.animation.ValueAnimator
+import android.content.res.ColorStateList
 import android.os.Bundle
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.util.Log
 import android.view.LayoutInflater
-import android.view.ViewGroup
+import android.view.View
 import android.view.View.OnLayoutChangeListener
+import android.view.ViewGroup
+import android.view.ViewGroup.MarginLayoutParams
+import androidx.annotation.LayoutRes
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import android.view.ViewGroup.MarginLayoutParams
-import android.text.SpannableString
-import android.animation.ValueAnimator
-import android.text.style.ForegroundColorSpan
-import android.text.Spanned
-import android.content.res.ColorStateList
-import android.os.Handler
-import android.os.Looper
-import android.text.Spannable
-import android.util.ArraySet
-import android.util.Log
-import android.view.View
-import androidx.core.graphics.Insets
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.activityViewModels
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.shape.ShapeAppearanceModel
+import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
-import com.pixel.spotifyapi.Objects.*
+import com.guavaapps.components.Components.getPx
+import com.guavaapps.spotlight.ColorSet.Companion.create
+import com.pixel.spotifyapi.Objects.ArtistSimple
 
 private const val TAG = "ExtraFragment"
 
@@ -247,6 +247,27 @@ class ExtraFragment : Fragment() {
         rippleAnimator.start()
         this.colorSet = colorSet
     }
+
+    class Adapter(fragmentActivity: FragmentActivity) : FragmentStateAdapter(fragmentActivity) {
+        private var mItems: List<Fragment> = ArrayList()
+        fun setItems(items: List<Fragment>) {
+            mItems = items
+        }
+
+        override fun createFragment(position: Int): Fragment {
+            return mItems[position]
+        }
+
+        override fun getItemCount(): Int {
+            return mItems.size
+        }
+
+        companion object {
+            @LayoutRes
+            private val LAYOUT = R.layout.adapter_layout
+        }
+    }
+
 }
 
 fun createOvalShapeAppearance(r: Float): ShapeAppearanceModel {

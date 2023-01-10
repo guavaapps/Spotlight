@@ -21,8 +21,7 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
     Fragment(R.layout.fragment_artist) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
-    private lateinit var artist: ImageView
-    private lateinit var artistName: TextView
+//    private lateinit var artistName: TextView
 
     private lateinit var artistTracks: ListView
 
@@ -31,8 +30,7 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
 
         linkNestedScrollableHost()
 
-        artist = view.findViewById(R.id.artist)
-        artistName = view.findViewById(R.id.artist_name)
+//        artistName = view.findViewById(R.id.artist_name)
 
         artistTracks = view.findViewById(R.id.tracks)
         artistTracks.canScroll = false
@@ -59,8 +57,7 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
     }
 
     private fun apply(wrappedArtist: ArtistWrapper?) {
-        artist.setImageBitmap(wrappedArtist?.thumbnail)
-        artistName.text = wrappedArtist?.artist?.name
+//        artistName.text = wrappedArtist?.artist?.name
     }
 
     override fun onResume() {

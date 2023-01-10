@@ -3,19 +3,27 @@ package com.guavaapps.spotlight
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Bundle
-import android.os.Parcel
-import android.os.Parcelable
+import android.content.res.Resources
+import android.content.res.TypedArray
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.*
 import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.ThemeUtils
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.fragment.NavHostFragment
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import com.guavaapps.spotlight.Mapper.map
 import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyApi
 import com.pixel.spotifyapi.SpotifyService
@@ -29,6 +37,7 @@ import retrofit.Callback
 import retrofit.RetrofitError
 import retrofit.client.Response
 import retrofit.converter.GsonConverter
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
@@ -52,8 +61,6 @@ private val SCOPES = arrayOf(
 )
 
 class MainActivity : AppCompatActivity() {
-    private val spotifyAppRemote: SpotifyAppRemote? = null
-
     private lateinit var app: Ky
 
     private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
@@ -67,9 +74,20 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Log.i (TAG, "i love you sooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo much ")
+        Log.i(TAG,
+            "i love you sooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo much ")
 
         app = application as Ky
+
+        val cacheFolder = filesDir
+        val tmpFolder = File(cacheFolder, "tmp")
+        val exists = tmpFolder.exists()
+
+        Log.e(TAG, "exists=$exists")
+        if (exists) {
+            val tmpFiles = tmpFolder.listFiles()
+            tmpFiles.forEach { Log.e(TAG, "tmp=${it.name}") }
+        }
 
         Ducky.quack(this)
 
@@ -152,7 +170,8 @@ class MainActivity : AppCompatActivity() {
 
                     Log.e(TAG, "recent - $track")
 
-                    Log.e(TAG, "jsonObject - [${jsonObject.items.size}] ${jsonObject.items.firstOrNull()?.track?.name} ${jsonObject.items.first().played_at}")
+                    Log.e(TAG,
+                        "jsonObject - [${jsonObject.items.size}] ${jsonObject.items.firstOrNull()?.track?.name} ${jsonObject.items.first().played_at}")
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -175,7 +194,7 @@ class MainActivity : AppCompatActivity() {
                 val response = conn.inputStream.readBytes()
                 val json = String(response)
 
-                val jsonTrack = GsonBuilder ()
+                val jsonTrack = GsonBuilder()
                     .create()
                     .fromJson(json, Track::class.java)
 
@@ -183,17 +202,17 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    fun getRecentSpotify (spotifyService: SpotifyService) {
+    fun getRecentSpotify(spotifyService: SpotifyService) {
         Executors.newSingleThreadScheduledExecutor()
             .execute {
                 try {
-                    val tracks = spotifyService.getRecentlyPlayedTracks(mapOf(SpotifyService.LIMIT to 1)).items.forEach {
-                        Log.e(TAG, "[track] ${it.track.name} {${it.played_at}}")
-                    }
+                    val tracks =
+                        spotifyService.getRecentlyPlayedTracks(mapOf(SpotifyService.LIMIT to 1)).items.forEach {
+                            Log.e(TAG, "[track] ${it.track.name} {${it.played_at}}")
+                        }
 
                     Log.e(TAG, "tracks - ${tracks}")
-                }
-                catch (e: Exception) {
+                } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }

@@ -1,8 +1,9 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
+    <!--    <style name="Theme.Spotlight" parent="Theme.Material3.Dark.NoActionBar">-->
     <style name="Theme.Spotlight" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+<!--        <item name="android:windowLightStatusBar">true</item>-->
 
         <item name="colorPrimary">#ffff74f9</item>
         <item name="colorOnPrimary">#ff380039</item>

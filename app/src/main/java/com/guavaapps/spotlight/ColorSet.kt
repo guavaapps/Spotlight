@@ -15,6 +15,14 @@ class ColorSet {
     // TODO rename colors
     // TODO find a way to deal with low delta
     // TODO use Pair<K, V> instead of IntArray(2)
+
+    // tones:
+    // primary -> 90
+    // secondary -> primary alpha 0.6
+    // tertiary -> primary alpha 0.24
+    // text -> primary 10
+    // surface ->
+
     val MAX_DELTA_E = Math.sqrt(195075.0).toFloat()
     var primary = 0
     var secondary = 0

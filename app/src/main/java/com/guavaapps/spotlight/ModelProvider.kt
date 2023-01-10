@@ -12,18 +12,18 @@ private const val TAG = "ModelProvider"
 class ModelProvider {
     private val FUN = "https://3ofwdrmnxc2t2jz2xneowmk5ji0nvrum.lambda-url.us-east-1.on.aws/"
 
-    fun get (user: String): ModelWrapper {
-        return getModel(user)
+    fun get (user: String, timeline: FloatArray = floatArrayOf()): ModelWrapper {
+        return getModel(user, timeline)
     }
 
-    fun getOptimized (user: String): ModelWrapper {
-        return optimiseModel(user)
+    fun getOptimized (user: String, timeline: FloatArray = floatArrayOf()): ModelWrapper {
+        return optimiseModel(user, timeline)
     }
 
-    private fun optimiseModel(userId: String): ModelWrapper {
+    private fun optimiseModel(userId: String, timeline: FloatArray): ModelWrapper {
         val conn = openConnection()
 
-        val requestObject = createOptimizeRequest(userId)
+        val requestObject = createOptimizeRequest(userId, timeline = timeline)
 
         val outputStream = conn.outputStream
 
@@ -62,10 +62,10 @@ class ModelProvider {
         )
     }
 
-    private fun getModel(userId: String): ModelWrapper {
+    private fun getModel(userId: String, timeline: FloatArray): ModelWrapper {
         val conn = openConnection()
 
-        val requestObject = createGetRequest(userId)
+        val requestObject = createGetRequest(userId, timeline = timeline)
 
         val outputStream = conn.outputStream
 
@@ -90,6 +90,9 @@ class ModelProvider {
         val tfliteModel = Base64.decode(obj.body.model!!, 0)
 
         val m = File.createTempFile("model", ".tflite")
+
+        Log.e(TAG, "model saved at - ${m.absolutePath}")
+
         m.writeBytes(tfliteModel)
 
         inputStream.close()
@@ -119,6 +122,7 @@ class ModelProvider {
         userId: String,
         lookBack: Int = 1,
         epochs: Int = 0,
+        timeline: FloatArray
     ): String {
         val requestObject = Gson().toJson(
             object {
@@ -126,6 +130,7 @@ class ModelProvider {
                 var action = "get"
                 var look_back = lookBack
                 var epochs = epochs
+                var timeline = timeline
             }
         )
 
@@ -136,6 +141,7 @@ class ModelProvider {
         userId: String,
         lookBack: Int = 5,
         epochs: Int = 2,
+        timeline: FloatArray
     ): String {
         val requestObject = Gson().toJson(
             object {
@@ -143,6 +149,7 @@ class ModelProvider {
                 var action = "create"
                 var look_back = lookBack
                 var epochs = epochs
+                var timeline = timeline
             }
         )
 

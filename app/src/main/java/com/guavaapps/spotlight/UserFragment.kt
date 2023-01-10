@@ -2,6 +2,7 @@ package com.guavaapps.spotlight
 
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.*
@@ -12,20 +13,16 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
-import android.view.ViewOutlineProvider
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
+import android.view.Window
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
-import androidx.annotation.CallSuper
 import androidx.core.graphics.Insets
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnPreDraw
+import androidx.core.view.*
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.NavHostFragment
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
@@ -34,7 +31,6 @@ import com.guavaapps.components.color.Argb
 import com.guavaapps.components.color.Hct
 import com.guavaapps.components.listview.ListView
 import com.guavaapps.spotlight.ColorSet.Companion.create
-import java.net.CookieHandler
 
 class UserFragment : Fragment(R.layout.fragment_user) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
@@ -114,6 +110,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         returnTransition = exitTransition
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -147,13 +144,28 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 //            addTarget(view)
 //        }
 
+        // this fragment always uses a light theme
+        // make status bar contrast with the background
+        with (requireActivity().window) {
+            WindowCompat.getInsetsController(this, decorView).let {
+                // true for light theme i.e. dark status bar
+                it.isAppearanceLightStatusBars = true
+
+                // change back to light status bar on exit
+                view.doOnDetach { _ ->
+                    it.isAppearanceLightStatusBars = false
+                }
+            }
+        }
+
         val callback: OnBackPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val navController = NavHostFragment.findNavController(this@UserFragment)
                 navController.navigateUp()
             }
         }
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
+        requireActivity().onBackPressedDispatcher
+            .addCallback(viewLifecycleOwner, callback)
 
         content = view.findViewById(R.id.content)
 
@@ -163,6 +175,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         spotifyButton = view.findViewById(R.id.spotify)
 
         listView = view.findViewById(R.id.list_view)
+        listView.canScroll = false
 
         listView.setOnScrollChangeListener { view, _, _, _, _ ->
             val scrollY = listView.computeVerticalScrollOffset()
@@ -178,11 +191,6 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             }.toInt()
             val a = ArgbEvaluator()
             val c = a.evaluate(e, start, end) as Int
-
-            content.setBackgroundColor(c)
-            content.elevation = e * getPx(requireContext(), 4)
-
-            Log.e(TAG, "scrollY=$scrollY e=$e elevation=${(4 * e).toInt()}")
         }
 
         view.viewTreeObserver.addOnGlobalLayoutListener(object :
@@ -202,6 +210,8 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         })
 
         viewModel.playlists.observe(viewLifecycleOwner) {
+
+            Log.e(TAG, "playlists - ${it.size}")
             views.clear()
             listView.clear()
 
@@ -210,23 +220,8 @@ class UserFragment : Fragment(R.layout.fragment_user) {
                 selectedView = view
             })
 
-            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
-
-            })
-
-            views.addAll(PlaylistView.createAll(requireContext(), it) { _, _ ->
-
-            })
-
-            val placeholderView = View(requireContext()).apply {
-                layoutParams = ViewGroup.LayoutParams(-1, content.height)
-                setBackgroundColor(Color.TRANSPARENT)
-            }
-
             listView.add(listOf(
-                placeholderView,
                 *views.toTypedArray(),
-                //PlaylistView.createAddButton(requireContext()) {}.also { addButton = it }
                 addButton
             ))
 
@@ -235,6 +230,25 @@ class UserFragment : Fragment(R.layout.fragment_user) {
                 ?.bottom ?: 0
 
             applyColorsToPlaylistListView(viewModel.user.value?.bitmap!!)
+
+            //selectView(null, views.first())
+        }
+
+        viewModel.playlist.observe(viewLifecycleOwner) {
+            Log.e(TAG, "id=${it?.playlist?.id} size=${views.size}")
+
+            val view = views.find { v ->
+                Log.e(TAG, "tag=${v.tag} id=${it?.playlist?.id}")
+
+                v.tag == it?.playlist?.id
+            } ?: return@observe
+
+            Log.e(TAG, "isViewNull=false")
+
+            view.doOnLayout {
+                selectView(selectedView, view)
+                selectedView = view
+            }
         }
 
         viewModel.user.observe(viewLifecycleOwner) { userWrapper ->
@@ -254,7 +268,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             applyColorSet(userWrapper.bitmap!!)
         }
 
-        viewModel.getPlaylists()
+        //viewModel.getPlaylists()
     }
 
     private fun applyColorSet(bitmap: Bitmap) {
@@ -310,12 +324,11 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             val prevTextStart = prevNameView.textColors.defaultColor
             val prevTextEnd = colorSet.text
 
-//            prev.setBackgroundColor(prevEnd)
+            prev.setBackgroundColor(prevEnd)
 
-            // vincent
             prevAnimator = ValueAnimator.ofObject(ArgbEvaluator(), prevStart, prevEnd)
             with(prevAnimator!!) {
-                duration = 200
+                duration = 150
                 addUpdateListener {
                     prev.setBackgroundColor(it.animatedValue as Int)
                 }
@@ -323,11 +336,12 @@ class UserFragment : Fragment(R.layout.fragment_user) {
                 start()
             }
 
-            prevTextAnimator = ValueAnimator.ofObject(ArgbEvaluator(), prevTextStart, prevTextEnd)
+            prevTextAnimator =
+                ValueAnimator.ofObject(ArgbEvaluator(), prevTextStart, prevTextEnd)
             with(prevTextAnimator!!) {
-                duration = 200
+                duration = 150
                 addUpdateListener {
-                    prevNameView.setBackgroundColor(it.animatedValue as Int)
+                    prevNameView.setTextColor(it.animatedValue as Int)
                 }
 
                 start()
@@ -341,7 +355,9 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         val end = colorSet.color40
 
         val textStart = nameView.textColors.defaultColor
-        val textEnd = with(Hct.fromInt(colorSet.primary)) {
+        val textEnd = colorSet.primary
+
+        with(Hct.fromInt(colorSet.primary)) {
             tone = 100f
             toInt()
         }
@@ -350,7 +366,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 
         viewAnimator = ValueAnimator.ofObject(ArgbEvaluator(), start, end)
         with(viewAnimator!!) {
-            duration = 200
+            duration = 150
             addUpdateListener {
                 view.setBackgroundColor(it.animatedValue as Int)
             }
@@ -360,9 +376,9 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 
         viewTextAnimator = ValueAnimator.ofObject(ArgbEvaluator(), textStart, textEnd)
         with(viewTextAnimator!!) {
-            duration = 200
+            duration = 150
             addUpdateListener {
-                nameView.setBackgroundColor(it.animatedValue as Int)
+                nameView.setTextColor(it.animatedValue as Int)
             }
 
             start()

@@ -28,6 +28,7 @@ import androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
+import com.guavaapps.components.color.Hct
 import com.pixel.spotifyapi.Objects.Track
 import kotlinx.coroutines.awaitAll
 import java.net.HttpURLConnection
@@ -115,7 +116,8 @@ class ContentFragment : Fragment(R.layout.fragment_content) {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
 
-                if (position == 1) {}//viewModel.loadAlbum()
+                if (position == 1) {
+                }//viewModel.loadAlbum()
             }
         })
 

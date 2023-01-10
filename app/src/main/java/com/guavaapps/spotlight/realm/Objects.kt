@@ -1,8 +1,6 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
-import androidx.appcompat.widget.ButtonBarLayout
-import com.google.gson.internal.LinkedTreeMap
 import com.guavaapps.spotlight.MatchWith
 import com.pixel.spotifyapi.Objects.*
 import io.realm.*
@@ -14,17 +12,19 @@ import java.util.*
 @RealmModule(classes = [AppUser::class, Model::class, TrackModel::class, ModelParam::class])
 open class RealmObjectsModule
 
+// your very pretty
+//gay <3
+
 // user
 @RealmClass("User")
 open class AppUser(
     @PrimaryKey
     @RealmField("_id")
     var spotify_id: String = "",
-    //var email: String? = null,
-    var date_signed_up: Date? = null,
+    var created: Date? = null,
     var last_login: Date? = null,
     var locale: String? = null,
-    var selectedPlaylistId: String? = null,
+    var playlist: String? = null,
     var timeline: RealmList<TrackModel> = RealmList(),
 ) : RealmObject()
 
@@ -48,13 +48,12 @@ fun d (){
 // model
 open class Model(
     @PrimaryKey
-//    @Required
     @RealmField("_id")
     var spotify_id: String = "",
-    var version: String = "",
+    var version: String? = null,
     var timestamp: Long? = null,
     var model_params: RealmList<ModelParam> = RealmList(),
-) : RealmObject() {}
+) : RealmObject()
 
 @RealmClass(embedded = true)
 open class ModelParam(

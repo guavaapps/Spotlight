@@ -1,13 +1,13 @@
 package com.guavaapps.spotlight
 
 import android.util.Log
-import androidx.lifecycle.*
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
-import androidx.palette.graphics.Palette
 import com.guavaapps.components.bitmap.BitmapTools.from
-import com.guavaapps.spotlight.Matcha.Companion.derealmify
-import com.guavaapps.spotlight.Matcha.Companion.realmify
 import com.guavaapps.spotlight.realm.AppUser
 import com.guavaapps.spotlight.realm.RealmPlaylist
 import com.guavaapps.spotlight.realm.TrackModel
@@ -19,8 +19,6 @@ import com.spotify.protocol.types.PlayerState
 import com.spotify.protocol.types.Repeat
 import io.realm.Realm
 import io.realm.RealmList
-import io.realm.RealmModel
-import io.realm.RealmObject
 import io.realm.mongodb.Credentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,6 +28,7 @@ import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import kotlin.collections.set
 
 private const val TAG = "ViewModel"
 
@@ -54,7 +53,11 @@ class ContentViewModel(
     private var albums = arrayOf<AlbumWrapper>()
     private var allArtists = mutableListOf<ArtistWrapper>()
     private var userPlaylists = mutableListOf<PlaylistSimple>()
+
+    // local copy of the user's listening history
     private val localTimeline = mutableListOf<TrackModel>()
+
+    private val no = mutableListOf<String>()
     private val batch = mutableListOf<TrackModel>()
 
     private val playlistsListener = Executors.newSingleThreadScheduledExecutor()
@@ -104,7 +107,7 @@ class ContentViewModel(
 
             updateUser(user)
 
-            prepareMainPlaylist()
+            loadPlaylists()
 
             getNext()
         }
@@ -126,8 +129,23 @@ class ContentViewModel(
 //            matcha.logout()
 
             matcha.login(credentials)
-//            modelRepository.init()
+            modelRepository.init()
         }
+
+
+        val model = modelRepository.model
+        val timeline = arrayOf(
+            floatArrayOf(0f, 0.5f, 0.2f, 0.74f, 0.24f)
+        )
+
+        val o = model.getNext(timeline)
+
+        Log.e(TAG, "output - ${o.joinToString()}")
+    }
+
+    private suspend fun logout() {
+        matcha.logout()
+        reset()
     }
 
     private fun reset() {
@@ -157,8 +175,8 @@ class ContentViewModel(
             matcha.where(AppUser::class.java)
                 .equalTo("_id", user.id).let {
                     val user = it.findFirst()
-                    appUser.date_signed_up = user?.date_signed_up
-                    appUser.selectedPlaylistId = user?.selectedPlaylistId
+                    appUser.created = user?.created
+                    appUser.playlist = user?.playlist
 
                     it.update(appUser)
                 }
@@ -231,7 +249,31 @@ class ContentViewModel(
     // ui
     private var first = true
 
+    fun add() {
+        val track = this.track.value!!.track
+
+        batch.add(TrackModel(
+            track.id,
+            track.uri,
+            System.currentTimeMillis()
+        ))
+
+        getNext()
+    }
+
+    fun no() {
+        no.add(track.value!!.track.id)
+
+        getNext()
+    }
+
     fun getNext() {
+        if (
+            track.value != null &&
+            (!batch.any { it.id == track.value?.track?.id } ||
+                    !no.contains(track.value?.track?.id))
+        ) return
+
         viewModelScope.launch {
             // The next batch has already been requested from the Spotify Api, listen for changes to ContentViewModel.track
             if (isWaiting) return@launch
@@ -397,76 +439,64 @@ class ContentViewModel(
         loadArtists(albums.map { it.album!! })
     }
 
-    private fun loadLocalPlaylists(): List<RealmPlaylist> {
-        return localRealm.where(RealmPlaylist::class.java)
-            //.equalTo("owner", user.value?.user?.id)
-            .findAllCopied()
-    }
+    // playlists
 
+    /**
+     * load all
+     * get main id
+     * update ui
+     */
     private fun getMainPlaylistId(): String? {
+        localRealm.executeTransaction {
+            it.where(RealmPlaylist::class.java)
+                .findAll()
+                .deleteAllFromRealm()
+        }
+
         return null
     }
 
     private suspend fun loadUserPlaylists() {
-        Log.d(TAG, "loading current user playlists")
         withContext(Dispatchers.IO) {
             userPlaylists = spotifyService.getCurrentUserPlaylists().items
         }
-
-        Log.d(TAG, "[RESULT] loaded current user playlists")
     }
 
     private suspend fun prepareMainPlaylist() {
-        val id = getMainPlaylistId() ?: userPlaylists.firstOrNull()?.id
+        val id = getMainPlaylistId()
+            ?: userPlaylists.firstOrNull { it.owner.id == user.value?.user?.id }?.id
 
-        if (id == null) {
-            playlist.value = null
-            return
-        }
-
-        val localPlaylist = localRealm.where(RealmPlaylist::class.java)
-            .equalTo("_id", id)
-            .findFirstCopied()
-
-        val playlist = userPlaylists.find { it.id == id }
-
-        if (playlist != null && localPlaylist != null && playlist?.snapshot_id == localPlaylist?.snapshot_id) {
-            val p = (localPlaylist?.derealmify() as Playlist).wrap()
-            val i = playlists.value?.indexOfFirst { it.playlist?.id == id } ?: 0
-
-            playlists.value?.set(i, p)
-            this.playlist.value = p
-        } else {
-            val p = withContext(Dispatchers.IO) {
-                spotifyService.getPlaylist(user.value?.user?.id, id)
+        playlist.value = userPlaylists.find { it.id == id }.let {
+            Playlist().apply {
+                this.id = it?.id
+                this.name = it?.name
+                this.uri = it?.uri
             }.wrap()
-
-            localRealm.executeTransaction {
-                it.insertOrUpdate(p.playlist?.realmify() as RealmObject)
-            }
-
-            playlists.value?.add(p)
-            this.playlist.value = p
         }
     }
 
-    // call from ui
-    fun getPlaylists() = viewModelScope.launch {
+    private suspend fun loadPlaylists() {
         loadUserPlaylists()
 
         playlists.value = userPlaylists
-            .filter { it.owner.id == user.value?.user?.id }
+            .filter {
+                (it.owner.id == user.value?.user?.id).also { b ->
+                    Log.e(TAG,
+                        "${it.name} - accepted=$b name=${it.owner.display_name} user=${user.value?.user?.id}")
+                }
+            }
             .map {
-            Playlist().apply {
-                id = it.id
-                name = it.name
-                images = it.images
-            }.wrap()
-        }.toMutableList()
+                Playlist().apply {
+                    id = it.id
+                    name = it.name
+                    images = it.images
+                }.wrap()
+            }.toMutableList()
+
+        prepareMainPlaylist()
     }
 
     // the spotify web api can handle a maximum request size of 50 ids
-// TODO impl in SpotifyApi
     private suspend fun splitLoad(
         ids: List<String>,
         batchSize: Int = 50,

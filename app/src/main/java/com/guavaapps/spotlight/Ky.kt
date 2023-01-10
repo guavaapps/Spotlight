@@ -1,13 +1,8 @@
 package com.guavaapps.spotlight
 
-import android.app.Activity
 import android.app.Application
-import android.os.Bundle
 import io.realm.Realm
 import io.realm.RealmConfiguration
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 
 private const val APP = "spotlight-gnmnp"
 private const val APP_NAME = "Spotlight"
@@ -30,18 +25,6 @@ class Ky : Application() {
         super.onCreate()
 
         Realm.init(applicationContext)
-        matcha = Matcha.init(applicationContext, APP, APP_NAME)
-
-        val remoteModelDataSource = ModelProvider()
-
-        modelRepository = ModelRepository(
-            matcha,
-            remoteModelDataSource
-        )
-
-        userRepository = UserRepository(
-            matcha
-        )
 
         val config = RealmConfiguration.Builder()
             .name("Spotlight")
@@ -51,6 +34,19 @@ class Ky : Application() {
             .build()
 
         localRealm = Realm.getInstance(config)
+        matcha = Matcha.init(applicationContext, APP, APP_NAME)
+
+        val modelProvider = ModelProvider()
+
+        modelRepository = ModelRepository(
+            matcha,
+            localRealm,
+            modelProvider
+        )
+
+        userRepository = UserRepository(
+            matcha
+        )
     }
 
     override fun onTerminate() {

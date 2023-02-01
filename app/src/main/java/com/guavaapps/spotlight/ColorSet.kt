@@ -3,6 +3,7 @@ package com.guavaapps.spotlight
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import androidx.annotation.ColorInt
 import com.guavaapps.spotlight.ColorSet
 import androidx.palette.graphics.Palette
 import androidx.palette.graphics.Palette.Swatch
@@ -87,7 +88,7 @@ class ColorSet {
             val surfaceColor1: Hct = Hct.fromInt(color)
             surfaceColor1.tone = 10f
 
-            colorSet.surface[0] = surfaceColor1.toInt()
+            colorSet.surface[0] = surfaceColor1.toInt().toArgb().apply { alpha = 0.16f * 255 }.toInt()
 
             val nextDominant = findNextDominant(builder?.generate())?.rgb ?: Color.BLACK
             val surfaceColor2: Hct = Hct.fromInt(nextDominant)
@@ -140,3 +141,7 @@ class ColorSet {
         }
     }
 }
+
+
+fun Int.toArgb () = Argb.from(this)
+fun Int.toHct () = Hct.fromInt(this)

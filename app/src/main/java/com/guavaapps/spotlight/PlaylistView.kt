@@ -23,7 +23,6 @@ import com.google.android.material.shape.ShapeAppearanceModel
 import com.guavaapps.components.Components.getPx
 import com.guavaapps.components.Components.getPxF
 import com.guavaapps.components.listview.ListView
-import com.guavaapps.spotlight.realm.d
 import io.realm.annotations.Beta
 
 private const val TAG = "PlaylistsFragment"
@@ -63,6 +62,8 @@ object PlaylistView {
         view.clipToOutline = true
         view.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
+                Log.e(TAG, "${view.left} ${view.top} ${view.right} ${view.bottom}")
+
                 outline.setRoundRect(0, 0, view.width, view.height, getPxF(context, 24))
             }
         }

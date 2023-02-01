@@ -5,19 +5,31 @@
       <map>
         <entry key="../../../../layout/custom_preview.xml" value="0.125" />
         <entry key="app/src/main/res/drawable/album_button_background.xml" value="0.1" />
+        <entry key="app/src/main/res/drawable/gradient.xml" value="0.2085" />
+        <entry key="app/src/main/res/drawable/ic_add_24.xml" value="0.1425" />
+        <entry key="app/src/main/res/drawable/ic_filled_push_pin_24.xml" value="0.1425" />
+        <entry key="app/src/main/res/drawable/ic_logout.xml" value="0.2085" />
+        <entry key="app/src/main/res/drawable/ic_outline_pin_24.xml" value="0.1425" />
+        <entry key="app/src/main/res/drawable/ic_playlist_48.xml" value="0.1425" />
+        <entry key="app/src/main/res/drawable/logout-48px.xml" value="0.2085" />
         <entry key="app/src/main/res/drawable/shape_oval.xml" value="0.1" />
         <entry key="app/src/main/res/drawable/tab.xml" value="0.2085" />
+        <entry key="app/src/main/res/drawable/tab2.xml" value="0.2085" />
         <entry key="app/src/main/res/drawable/tab_indicator.xml" value="0.2085" />
+        <entry key="app/src/main/res/drawable/tab_indicator2.xml" value="0.2085" />
         <entry key="app/src/main/res/layout/activity_main.xml" value="0.19610507246376813" />
         <entry key="app/src/main/res/layout/album_button.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/album_player_item.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/album_view_item.xml" value="0.13229166666666667" />
+        <entry key="app/src/main/res/layout/fragment_add.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_album.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_artist.xml" value="0.19610507246376813" />
         <entry key="app/src/main/res/layout/fragment_content.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_content2.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_content_more.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_extra.xml" value="0.13229166666666667" />
+        <entry key="app/src/main/res/layout/fragment_install_spotify.xml" value="0.19610507246376813" />
+        <entry key="app/src/main/res/layout/fragment_login.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_playlist.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_playlists.xml" value="0.13229166666666667" />
         <entry key="app/src/main/res/layout/fragment_playlitsts.xml" value="0.13125" />

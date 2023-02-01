@@ -7,6 +7,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+private val TAG = "temp"
+
+private const val FEATURES = 9
+
 class ModelRepository(
     private val matcha: Matcha,
     private val realm: Realm,
@@ -20,16 +24,22 @@ class ModelRepository(
     private lateinit var modelConfig: Model
     private lateinit var modelConfigProvider: Match<Model>
 
-    suspend fun init() {
+    suspend fun init(timeline: Array<FloatArray>) {
         userId = matcha.currentUser!!.customData["spotify_id"] as String
 
         modelConfigProvider = matcha.where(Model::class.java)
             .equalTo("_id", userId)
 
-        modelConfig = modelConfigProvider.findFirst() ?: Model(userId).apply { timestamp = 0L }
+        withContext(Dispatchers.IO) {
+            val modelConfig = modelConfigProvider.findFirst()
 
-        val wrappedModel = loadModel()
-        model = wrappedModel.model
+            if (modelConfig == null || !isConfigValid(modelConfig)) {
+                model = optimiseModel(timeline).model!!
+            } else {
+                this@ModelRepository.modelConfig = modelConfig
+                model = loadModel()?.model ?: optimiseModel(timeline).model!!
+            }
+        }
 
         watchModel()
     }
@@ -37,60 +47,85 @@ class ModelRepository(
     fun watchModel() {
         modelConfigProvider
             .watch {
-                if (it.timestamp!! > modelConfig.timestamp!!) modelConfig = it
+                if (it.timestamp!! > modelConfig.timestamp!!) {
+                    modelConfig = it
+                }
             }
     }
 
     fun close() {
-        if (this::modelConfigProvider.isInitialized) modelConfigProvider.stopWatching()
+        if (this::modelConfigProvider.isInitialized) {
+            modelConfigProvider.stopWatching()
+        }
     }
 
-    fun optimiseModel(): ModelWrapper {
-        return modelProvider.getOptimized(userId)
+    suspend fun optimiseModel(timeline: Array<FloatArray>): ModelWrapper {
+        val model = modelProvider.getOptimized(userId, timeline)
+        val config = modelConfigProvider.findFirst()
+
+        config?.let {
+            withContext(Dispatchers.IO) {
+                realm.executeTransaction {
+                    it.insertOrUpdate(config)
+                }
+            }
+        }
+
+        return model
     }
 
-    private suspend fun loadModel(): ModelWrapper {
+    private suspend fun loadModel(): ModelWrapper? {
         // realm is main-thread initialised
-        val localModelConfig = withContext(Dispatchers.Main) {
+        val localModelConfig = withContext(Dispatchers.IO) {
             realm.where(Model::class.java)
                 .equalTo("_id", userId)
                 .findFirstCopied()
         }
 
         val latestModelConfig =
-            modelConfigProvider.findFirst() ?: Model(userId).apply { timestamp = 0L }
+            modelConfigProvider.findFirst()
                 .also { Log.e("ModelRepository", "no model found") }
 
-        val TAG = "temp"
+        val configNotNull = latestModelConfig != null
 
-        with(latestModelConfig) {
-            Log.e(TAG, "MODEL CONFIG")
-            Log.e(TAG, "    $spotify_id")
-            Log.e(TAG, "    $timestamp")
-            Log.e(TAG, "    $version")
+        if (!configNotNull) {
+            return null
         }
 
-        if (latestModelConfig.timestamp == localModelConfig?.timestamp) {
+        // debug
+        val useLocal = true
+
+        if (latestModelConfig?.timestamp == localModelConfig?.timestamp && useLocal) {
             val m = System.getProperty("java.io.tmpdir", ".")?.let {
                 File(it)
                     .listFiles()
-                    ?.maxBy { it.lastModified() }
+                    ?.maxBy { it.lastModified() }.also { m ->
+                        File(it).listFiles()
+                            ?.filterNot { it == m }
+                            ?.forEach { it.delete() }
+                    }
             }
             if (m != null) {
                 Log.e(TAG, "timestamps match, using local copy")
 
-                return ModelWrapper(latestModelConfig.version, latestModelConfig.timestamp, DLSTMPModel(m))
+                return ModelWrapper(
+                    latestModelConfig?.version,
+                    latestModelConfig?.timestamp,
+                    DLSTMPModel(m)
+                )
             }
         }
 
         Log.e(TAG, "timestamps do not match, requesting new copy")
 
-        withContext(Dispatchers.Main) {
+        withContext(Dispatchers.IO) {
             realm.executeTransaction {
                 it.insertOrUpdate(latestModelConfig)
             }
         }
 
-        return modelProvider.get(userId)
+        return modelProvider.get(userId).takeIf { it.verion == modelConfig.version }
     }
+
+    private fun isConfigValid(config: Model) = config.model_params.last()?.shape?.last() == FEATURES
 }

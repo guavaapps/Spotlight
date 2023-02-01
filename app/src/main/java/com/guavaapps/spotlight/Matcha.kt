@@ -148,6 +148,8 @@ class Match<E : RealmObject>(
     }
 
     fun watch(result: (obj: E) -> Unit) {
+        var watcher: RealmEventStreamAsyncTask<Document>? = null
+
         if (watcher != null) return
 
         watcher = collection.watchAsync()
@@ -203,17 +205,10 @@ class Matcha(
     }
 
     fun <E : RealmObject> where(clazz: Class<E>): Match<E> {
-//        val name = clazz.getAnnotation(MatchaClass::class.java)?.name ?: clazz.simpleName
         val name =
-            clazz.getAnnotation(RealmClass::class.java)?.value?.ifEmpty { null } ?: clazz.simpleName
-
-        val annotation = clazz.getAnnotation(RealmClass::class.java)
-        val value = annotation?.value
-
-        Log.e(TAG,
-            "where - annotation=$annotation value=$value has=${clazz.isAnnotationPresent(RealmClass::class.java)}")
-
-        Log.e(TAG, "[WHERE] class=$name")
+            clazz.getAnnotation(RealmClass::class.java)
+                ?.value
+                ?.ifEmpty { clazz.simpleName }
 
         val collection = mongoDatabase.getCollection(name)
 
@@ -240,9 +235,6 @@ class Matcha(
         fun <E> Document.asMatchaObject(clazz: Class<E>): E {
             val obj = clazz.newInstance() as E
 
-            Log.e(TAG,
-                "                                                                                                                                                                                                                                                                                                                                                  n")
-
             clazz.declaredFields.forEach {
                 it.isAccessible = true
                 val fieldName = it.getAnnotation(RealmField::class.java)?.value ?: it.name
@@ -254,7 +246,6 @@ class Matcha(
                     val fieldClass =
                         (it.genericType as ParameterizedType).actualTypeArguments.first() as Class<*>
 
-                    Log.e(TAG, "fieldName=$fieldName fieldClass=$fieldClass")
 
                     if (isPrimitive(fieldClass)) {
                         val objects = (this.get(fieldName) as List<*>).map {
@@ -382,8 +373,6 @@ class Matcha(
                         val enc = pagerClass.enclosingClass
 
                         f.toString()
-
-                        Log.e(TAG, "enc=$enc field=${f.declaringClass}")
                     }
 
                     if (v::class.java.simpleName == "Pager") {
@@ -488,18 +477,13 @@ private fun isPrimitive(clazz: Class<*>) =
 fun resolveRealmObject(clazz: Class<*>): Class<*> {
     val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
 
-    return if (RealmObject::class.java.isAssignableFrom(clazz)) clazz.also {
-        Log.e(TAG,
-            "resolver - no change $it")
-    }
+    return if (RealmObject::class.java.isAssignableFrom(clazz)) clazz
     else if (clazz.simpleName == "Pager") {
         val t = if (clazz.enclosingClass.simpleName == "RealmAlbum") {
             "TrackSimple"
         } else {
             "PlaylistTrack"
         }
-
-        Log.e(TAG, "type resolver - $t")
 //        val type = (clazz.genericSuperclass as ParameterizedType?)?.actualTypeArguments?.first()
 //        Log.e(TAG, "pager of type - ${type?.typeName}")
         Class.forName("com.guavaapps.spotlight.realm.Realm${t}${clazz.simpleName}")

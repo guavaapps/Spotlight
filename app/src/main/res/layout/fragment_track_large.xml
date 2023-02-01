@@ -36,27 +36,23 @@
             android:id="@+id/track_name_view"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@android:color/transparent"
             android:ellipsize="marquee"
             android:gravity="center"
             android:maxLines="1"
             android:scrollHorizontally="true"
             android:textAlignment="center"
             android:textAppearance="?attr/textAppearanceTitleLarge"
-            app:layout_constraintBottom_toTopOf="@id/extra_artists_view"
+            app:layout_constraintBottom_toTopOf="@id/artists_view"
             app:layout_constraintTop_toTopOf="parent" />
 
         <TextView
-            android:id="@+id/extra_artists_view"
+            android:id="@+id/artists_view"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginLeft="24dp"
-            android:layout_marginRight="24dp"
-            android:background="@android:color/transparent"
             android:gravity="center"
             android:maxLines="1"
             android:textAlignment="center"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textAppearance="?attr/textAppearanceBodyLarge"
             app:layout_constraintTop_toBottomOf="@id/track_name_view" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>

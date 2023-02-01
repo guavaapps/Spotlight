@@ -7,6 +7,7 @@ import io.realm.*
 import io.realm.annotations.*
 import org.bson.types.ObjectId
 import java.nio.ByteBuffer
+import java.sql.Timestamp
 import java.util.*
 
 @RealmModule(classes = [AppUser::class, Model::class, TrackModel::class, ModelParam::class])
@@ -15,7 +16,6 @@ open class RealmObjectsModule
 // your very pretty
 //gay <3
 
-// user
 @RealmClass("User")
 open class AppUser(
     @PrimaryKey
@@ -26,24 +26,24 @@ open class AppUser(
     var locale: String? = null,
     var playlist: String? = null,
     var timeline: RealmList<TrackModel> = RealmList(),
+    var model_timestamp: Long? = 0L,
 ) : RealmObject()
 
 @RealmClass(embedded = true)
 open class TrackModel(
     var id: String? = null,
     var uri: String? = null,
-    //var genres: RealmList<String> = RealmList(),
     @Required
     var timestamp: Long? = null,
     @Required
     var features: RealmList<Float> = RealmList(),
 ) : RealmObject()
 
-fun d (){
-    val t = Track ()
-
-
-}
+open class MainPlaylist(
+    @PrimaryKey
+    var user_id: String = "",
+    var playlist_id: String = "",
+) : RealmObject()
 
 // model
 open class Model(
@@ -70,7 +70,7 @@ open class RealmUserPublic(
     var external_urls: RealmDictionary<String>? = null,
     var followers: RealmFollowers? = null,
     var href: String? = null,
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null,
     var images: RealmList<RealmImage>? = null,
     var type: String? = null,
@@ -83,7 +83,7 @@ open class RealmPlaylist(
     var collaborative: Boolean? = null,
     var external_urls: RealmDictionary<String>? = null,
     var href: String? = null,
-    @RealmField ("_id")
+    @RealmField("_id")
     var id: String? = null,
     var images: RealmList<RealmImage?>? = null,
     var name: String? = null,
@@ -97,13 +97,13 @@ open class RealmPlaylist(
     var tracks: RealmPlaylistTrackPager? = null,
 ) : RealmObject()
 
-@RealmClass (embedded = true)
+@RealmClass(embedded = true)
 open class RealmPlaylistTrack(
     var added_at: String? = null,
     var added_by: RealmUserPublic? = null,
     var track: RealmTrack? = null,
     var is_local: Boolean? = null,
-): RealmObject ()
+) : RealmObject()
 
 // spotify
 @MatchWith([Track::class])
@@ -199,6 +199,7 @@ fun ky(realmBitmap: RealmBitmap) {
         ByteBuffer.wrap(realmBitmap.bytes)
     )
 }
+
 @MatchWith([Album::class])
 open class RealmAlbum : RealmObject() {
     var album_type: String? = null

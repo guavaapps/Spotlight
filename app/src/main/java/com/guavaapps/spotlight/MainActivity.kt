@@ -3,30 +3,18 @@ package com.guavaapps.spotlight
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Resources
-import android.content.res.TypedArray
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.os.*
+import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.ThemeUtils
-import androidx.core.content.res.ResourcesCompat
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentContainerView
-import androidx.navigation.fragment.NavHostFragment
-import com.google.gson.GsonBuilder
-import com.google.gson.reflect.TypeToken
-import com.guavaapps.spotlight.Mapper.map
-import com.pixel.spotifyapi.Objects.*
+import com.guavaapps.components.color.Argb
+import com.guavaapps.components.color.Hct
+import com.pixel.spotifyapi.Objects.UserPrivate
 import com.pixel.spotifyapi.SpotifyApi
-import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.ConnectionParams
 import com.spotify.android.appremote.api.Connector
 import com.spotify.android.appremote.api.SpotifyAppRemote
@@ -36,11 +24,6 @@ import com.spotify.sdk.android.auth.AuthorizationResponse
 import retrofit.Callback
 import retrofit.RetrofitError
 import retrofit.client.Response
-import retrofit.converter.GsonConverter
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.concurrent.Executors
 
 private const val TAG = "MainActivity"
 private const val CLIENT_ID = "431b4c7e106c4470a0b145cdfe7962bd"
@@ -65,29 +48,71 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
 
+    private val isSpotifyInstalled: Boolean
+        get() {
+            try {
+                packageManager.getPackageInfo(SPOTIFY, 0)
+                return true
+            } catch (e: PackageManager.NameNotFoundException) {
+            }
+            return false
+        }
+
     private var lock: Any? = Any()
 
     private lateinit var fragmentContainerView: FragmentContainerView
     private lateinit var contentFragment: ContentFragment
 
+    fun createThemeColors() {
+        val spotify = 0x1db954
+        val tensorflow = 0xff6f00
+        val app = 0x660073
+
+        val hex = tensorflow
+
+        val hct = Hct.fromInt(hex)
+
+        hct.toInt().let {
+            it.logHct()
+            it.logArgb()
+        }
+
+        val colors = mutableListOf<String>()
+
+        (0..100 step 10).forEach {
+            Log.e(TAG, "tone=$it")
+            val hct = Hct.fromInt(hex).apply { tone = it.toFloat() }
+            hct.toInt().let {
+                it.logHct()
+                it.logArgb()
+
+                val hexColor = "#${Integer.toHexString(it)}"
+
+                colors.add(hexColor)
+            }
+        }
+
+        Log.e(TAG, colors.mapIndexed {i, it -> "${i * 10}: $it"}.joinToString("\n"))
+    }
+
+    fun Int.logHct() = with(Hct.fromInt(this)) {
+        Log.e(TAG, "    [hct] ${this@logHct} - h=$hue c=$chroma t=$tone")
+    }
+
+    fun Int.logArgb() = with(Argb.from(this)) {
+        Log.e(TAG, "    [hct] ${this@logArgb} - a=$alpha h=$red c=$green t=$blue")
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        createThemeColors()
 
         Log.i(TAG,
             "i love you sooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo much ")
 
         app = application as Ky
-
-        val cacheFolder = filesDir
-        val tmpFolder = File(cacheFolder, "tmp")
-        val exists = tmpFolder.exists()
-
-        Log.e(TAG, "exists=$exists")
-        if (exists) {
-            val tmpFiles = tmpFolder.listFiles()
-            tmpFiles.forEach { Log.e(TAG, "tmp=${it.name}") }
-        }
 
         Ducky.quack(this)
 
@@ -100,122 +125,20 @@ class MainActivity : AppCompatActivity() {
 
         val content = findViewById<View>(android.R.id.content)
 
-        val fragment =
-            supportFragmentManager.findFragmentById(R.id.fragment_container_view) as NavHostFragment
-
-        val navController = fragment.navController
-
-        content.viewTreeObserver
-            .addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
-                override fun onPreDraw(): Boolean {
-                    if (lock == null) {
-                        content.viewTreeObserver
-                            .removeOnPreDrawListener(this)
-
-//                            getSupportFragmentManager ().beginTransaction ()
-//                                    .add (mFragmentContainerView.getId (), mContentFragment)
-//                                    .commit ();
-                    }
-                    return false
+        content.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (lock == null) {
+                    content.viewTreeObserver.removeOnPreDrawListener(this)
                 }
-            })
+                return false
+            }
+        })
 
-        if (isSpotifyInstalled) {// && app.matcha.currentUser == null) {
+        if (isSpotifyInstalled) {
             auth()
+        } else {
+            // show install spotify fragment
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-    }
-
-    fun getRecent(token: String) {
-        Executors.newSingleThreadScheduledExecutor()
-            .execute {
-                val conn = URL("https://api.spotify.com/v1/me/player/recently-played/?limit=1")
-                    .openConnection() as HttpURLConnection
-
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.setRequestProperty("Content-type", "application/json")
-
-                val response = conn.inputStream.readBytes()
-                val json = String(response)
-
-                val track = json.substringAfter("\"track\" : {")
-                    .substringBeforeLast("} ],")
-
-                /**
-                 * album
-                 * artists
-                 * disc_number
-                 * duration_ms
-                 * explicit
-                 * external_ids
-                 *
-                 */
-
-                try {
-                    val type = object : TypeToken<Pager<RecentlyPlayedTrack>>() {}.type
-
-                    val jsonObject = GsonBuilder()
-                        .setPrettyPrinting()
-                        .serializeNulls()
-                        .create()
-                        .fromJson<Pager<RecentlyPlayedTrack>>(json, type)
-
-                    Log.e(TAG, "recent - $track")
-
-                    Log.e(TAG,
-                        "jsonObject - [${jsonObject.items.size}] ${jsonObject.items.firstOrNull()?.track?.name} ${jsonObject.items.first().played_at}")
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-    }
-
-    fun getTrack(token: String) {
-        Executors.newSingleThreadScheduledExecutor()
-            .execute {
-
-                // 3 bless 74Te5k4g7mVRm9hjjA5U8O
-                val track = "74Te5k4g7mVRm9hjjA5U8O"
-                val conn = URL("https://api.spotify.com/v1/tracks/$track")
-                    .openConnection() as HttpURLConnection
-
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.setRequestProperty("Content-type", "application/json")
-
-                val response = conn.inputStream.readBytes()
-                val json = String(response)
-
-                val jsonTrack = GsonBuilder()
-                    .create()
-                    .fromJson(json, Track::class.java)
-
-                Log.e(TAG, "track - ${jsonTrack.name}")
-            }
-    }
-
-    fun getRecentSpotify(spotifyService: SpotifyService) {
-        Executors.newSingleThreadScheduledExecutor()
-            .execute {
-                try {
-                    val tracks =
-                        spotifyService.getRecentlyPlayedTracks(mapOf(SpotifyService.LIMIT to 1)).items.forEach {
-                            Log.e(TAG, "[track] ${it.track.name} {${it.played_at}}")
-                        }
-
-                    Log.e(TAG, "tracks - ${tracks}")
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
@@ -223,8 +146,6 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == REQUEST_AUTH) {
             val response = AuthorizationClient.getResponse(resultCode, intent)
-
-            Log.e(TAG, response.type.toString())
 
             when (response.type) {
                 AuthorizationResponse.Type.TOKEN -> {
@@ -235,8 +156,8 @@ class MainActivity : AppCompatActivity() {
                     val spotifyService = spotifyApi.service
 
                     spotifyService.getCurrentUser(object : Callback<UserPrivate> {
-                        override fun success(t: UserPrivate?, response: Response?) {
-                            if (t!!.product == SPOTIFY_PREMIUM) {
+                        override fun success(t: UserPrivate, response: Response) {
+                            if (t.product == SPOTIFY_PREMIUM) {
                                 getAppRemote {
                                     viewModel.initForUser(spotifyService, it!!, t)
 
@@ -245,10 +166,10 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        override fun failure(error: RetrofitError?) {
+                        override fun failure(error: RetrofitError) {
                             // not authorised
                             Log.d(TAG, "error verifying user")
-                            if (error?.response?.status == 401) {
+                            if (error.response.status == 401) {
                                 Log.e(TAG, "not authorized")
                             }
                         }
@@ -294,27 +215,21 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(error: Throwable) {
-                    Log.d(
-                        TAG,
-                        "SpotifyAppRemote failed to connect - " + error.message + " cause=" + error.cause
-                    )
+                    Log.d(TAG,
+                        "SpotifyAppRemote failed to connect - ${error.message} cause=${error.cause}")
 
+                    error.printStackTrace()
                     onResult(null)
                 }
             })
     }
-
-    private val isSpotifyInstalled: Boolean
-        private get() {
-            try {
-                packageManager.getPackageInfo(SPOTIFY, 0)
-                return true
-            } catch (e: PackageManager.NameNotFoundException) {
-            }
-            return false
-        }
-
-    private fun isPremium(currentUser: UserPrivate): Boolean {
-        return currentUser.product == SPOTIFY_PREMIUM
-    }
 }
+
+val spotifyContainer = 0x72fe8f
+val spotifyText = 0x002107
+val appContainer = 0xffd5fe
+val appText = 0x36003f
+val tfContainer = 0xffdbc9
+val tfText = 0x341000
+
+val `ViewModelkt` = 0

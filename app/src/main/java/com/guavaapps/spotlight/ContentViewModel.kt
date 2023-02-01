@@ -1,6 +1,5 @@
 package com.guavaapps.spotlight
 
-import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -9,14 +8,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.guavaapps.components.bitmap.BitmapTools.from
 import com.guavaapps.spotlight.realm.AppUser
-import com.guavaapps.spotlight.realm.RealmPlaylist
 import com.guavaapps.spotlight.realm.TrackModel
 import com.pixel.spotifyapi.Objects.*
 import com.pixel.spotifyapi.SpotifyService
 import com.spotify.android.appremote.api.AppRemote
 import com.spotify.android.appremote.api.SpotifyAppRemote
-import com.spotify.protocol.types.PlayerState
-import com.spotify.protocol.types.Repeat
 import io.realm.Realm
 import io.realm.RealmList
 import io.realm.mongodb.Credentials
@@ -24,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bson.Document
+import retrofit.RetrofitError
 import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -32,15 +29,31 @@ import kotlin.collections.set
 
 private const val TAG = "ViewModel"
 
+// spotify track features
+private val FEATURES = listOf(
+    "acousticness",
+    "danceability",
+    "energy",
+    "instrumentalness",
+    "liveness",
+    "loudness",
+    "speechiness",
+    "tempo",
+    "valence",
+)
+
+// the spotify web api supports up to 100 tracks being added
+// to a playlist
+private const val MAX_BATCH_SIZE = 100
+
 class ContentViewModel(
     private var matcha: Matcha,
-    private var userRepository: UserRepository,
     private var modelRepository: ModelRepository,
-    private var localRealm: Realm,
+    private var realm: Realm,
 ) : ViewModel() {
     private var isWaiting = false
-    private var needsTrack = true
-    private var needsNextTrack = true
+
+    private lateinit var appUser: AppUser
 
     // spotify
     private lateinit var spotifyService: SpotifyService
@@ -50,280 +63,397 @@ class ContentViewModel(
 
     // internal
     private val tracks: Queue<TrackWrapper?> = LinkedList()
-    private var albums = arrayOf<AlbumWrapper>()
+    private var albumInternal: AlbumWrapper? = null
     private var allArtists = mutableListOf<ArtistWrapper>()
     private var userPlaylists = mutableListOf<PlaylistSimple>()
 
     // local copy of the user's listening history
     private val localTimeline = mutableListOf<TrackModel>()
 
-    private val no = mutableListOf<String>()
+    private val rejected = mutableListOf<String>()
     private val batch = mutableListOf<TrackModel>()
-
-    private val playlistsListener = Executors.newSingleThreadScheduledExecutor()
 
     // observables
     val user = MutableLiveData<UserWrapper>()
     val track = MutableLiveData<TrackWrapper?>()
     val nextTrack = MutableLiveData<TrackWrapper?>()
     val album = MutableLiveData<AlbumWrapper?>()
-    val artists = MutableLiveData<List<ArtistWrapper>?>()
+    val artists = MutableLiveData<List<ArtistWrapper>>()
     val artistTracks = MutableLiveData<MutableMap<String, List<TrackWrapper>>>()
     val playlists = MutableLiveData<MutableList<PlaylistWrapper>>()
     val playlistTracks = MutableLiveData<MutableMap<String, List<PlaylistTrackWrapper>>>()
     val playlist = MutableLiveData<PlaylistWrapper?>()
     val progress = MutableLiveData<Long>()
 
-    // features map TODO do something about it idk i dont like it tho
-    private var featuresMap = mapOf(
-        "acousticness" to 0,
-        "analysis_url" to 1,
-        "danceability" to 2,
-        "duration_ms" to 3,
-        "energy" to 4,
-        "instrumentalness" to 5,
-        "key" to 6,
-        "liveness" to 7,
-        "loudness" to 8,
-        "mode" to 9,
-        "speechiness" to 10,
-        "tempo" to 11,
-        "time_signature" to 12,
-        "valence" to 13
-    )
-
     fun initForUser(
         spotifyService: SpotifyService,
         spotifyAppRemote: SpotifyAppRemote,
-        user: UserPrivate? = null,
+        user: UserPrivate,
     ) {
         this.spotifyService = spotifyService
         this.spotifyAppRemote = spotifyAppRemote
 
         viewModelScope.launch {
-            val user = user ?: spotifyService.getCurrentUser()
-
+            // get user data
             login(user)
 
+            // update user ui
             updateUser(user)
 
+            //local timeline available after updateUser()
+            modelRepository.init(localTimeline.map {
+                it.features.toFloatArray()
+            }.filterNot { it.isEmpty() }
+                .toTypedArray())
+
+            // load user playlists and update ui
             loadPlaylists()
 
+            // get next track
             getNext()
         }
     }
 
-    private suspend fun login(user: UserPrivate) {
-        withContext(Dispatchers.IO) {
-            val userId = user.id
+    private suspend fun login(user: UserPrivate) = withContext(Dispatchers.IO) {
+        val userId = user.id
 
-            val credentials = Credentials.customFunction(
-                Document(
-                    mapOf(
-                        "spotify_id" to userId,
-                    )
+        val credentials = Credentials.customFunction(
+            Document(
+                mapOf(
+                    "spotify_id" to userId,
                 )
             )
-
-//            modelRepository.close()
-//            matcha.logout()
-
-            matcha.login(credentials)
-            modelRepository.init()
-        }
-
-
-        val model = modelRepository.model
-        val timeline = arrayOf(
-            floatArrayOf(0f, 0.5f, 0.2f, 0.74f, 0.24f)
         )
 
-        val o = model.getNext(timeline)
-
-        Log.e(TAG, "output - ${o.joinToString()}")
-    }
-
-    private suspend fun logout() {
-        matcha.logout()
-        reset()
-    }
-
-    private fun reset() {
-        tracks.clear()
-        track.value = null
-        nextTrack.value = null
+        // authenticate with mongo db using the user's spotify id
+        matcha.login(credentials)
     }
 
     private suspend fun updateUser(user: UserPrivate) {
         val wrappedUser = UserWrapper(user)
 
+        // TODO UserPrivate.wrap()
         withContext(Dispatchers.IO) {
             wrappedUser.bitmap = from(user.images[0].url)
         }
 
+        // update ui
         withContext(Dispatchers.Main) {
             this@ContentViewModel.user.value = wrappedUser
-        }
-
-        val appUser = AppUser().apply {
-            spotify_id = user.id
-            last_login = Date(System.currentTimeMillis())
-            locale = user.country
         }
 
         withContext(Dispatchers.IO) {
             matcha.where(AppUser::class.java)
                 .equalTo("_id", user.id).let {
                     val user = it.findFirst()
-                    appUser.created = user?.created
-                    appUser.playlist = user?.playlist
 
-                    it.update(appUser)
+                    // update last login date in the user's document
+                    user?.last_login = Date(System.currentTimeMillis())
+
+                    // copy the user's listening history
+                    localTimeline.addAll(
+                        user?.timeline?.let {
+                            it.ifEmpty { getRecentlyPlayedTracks() }
+                        }!!
+                    )
+
+                    // update the local and remote user documents
+                    user.let { u ->
+                        it.update(u)
+                        realm.executeTransaction {
+                            it.insertOrUpdate(u)
+                        }
+                    }
+
+                    this@ContentViewModel.appUser = user
                 }
-
         }
     }
 
-    private suspend fun pullBatch(): Array<TrackModel> {
-        // pull local
+    // dlstmp model
+    private suspend fun getRecentlyPlayedTracks() = withContext(Dispatchers.IO) {
+        val recentlyPlayedTracks = spotifyService.getRecentlyPlayedTracks(mapOf("limit" to 50))
 
-        return emptyArray()
+        val tracks = recentlyPlayedTracks.items.map {
+            TrackModel(
+                it.track.id,
+                it.track.uri,
+                timestamp = 0L
+            )
+        }.toMutableList()
+
+        tracks.injectFeatures()
+
+        return@withContext tracks
+    }
+
+    // get artist, track and genre seeds based on the user's listening history
+    // more recent seeds have a higher weight
+    // since the spotify api supports a maximum of 5 seeds per recommendation request
+    // 3 short term (most recent), 2 medium term and 1 long term seed is used
+    private suspend fun getSeeds() = withContext(Dispatchers.IO) {
+        val paramsShort = mapOf(
+            // api limit <= 50
+            "limit" to 50,
+            // get a broad picture of what the user listens to
+            "time_range" to "short_term"
+        )
+
+        val paramsMedium = mapOf(
+            "limit" to 50,
+            "time_range" to "medium_term"
+        )
+
+        val paramsLong = mapOf(
+            "limit" to 50,
+            "time_range" to "long_term"
+        )
+
+        val topGenres = mutableListOf<String>()
+
+        val topArtists = listOf(
+            *spotifyService.getTopArtists(paramsShort).items.let {
+                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(3))
+                it.take(3).toTypedArray()
+            },
+            *spotifyService.getTopArtists(paramsMedium).items.let {
+                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(2))
+                it.take(2).toTypedArray()
+            },
+            *spotifyService.getTopArtists(paramsLong).items.let {
+                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(1))
+                it.take(1).toTypedArray()
+            },
+        )
+
+        val topTracks = listOf(
+            *spotifyService.getTopTracks(paramsShort).items.take(3).toTypedArray(),
+            *spotifyService.getTopTracks(paramsMedium).items.take(2).toTypedArray(),
+            *spotifyService.getTopTracks(paramsLong).items.take(1).toTypedArray(),
+        )
+
+        return@withContext Triple(
+            topArtists.joinToString(",") { it.id },
+            topTracks.joinToString(",") { it.id },
+            topGenres.joinToString(",") { it.replace(" ", "-") }
+        )
     }
 
     private fun getNextTrackFeatures(): FloatArray {
         val model = modelRepository.model
 
         val timeline = localTimeline.map { it.features.toFloatArray() }.toTypedArray()
+            .filterNot { it.isEmpty() } // exclude empty results
+            .toTypedArray()
 
         return model.getNext(timeline)
     }
 
-    private fun createParamsObject(features: FloatArray): Map<String, Any> {
-        var map = mutableMapOf<String, Any>(
-            "genre_seed" to "hip_hop"
+    private suspend fun createParamsObject(features: FloatArray): List<Map<String, Any>> {
+        val iterator = features.iterator()
+
+        // the recommendations provided will be based on these seeds
+        val (artists, tracks, genres) = getSeeds()
+
+        // the indices of the feature names and the feature values
+        // always match and the order doesn't change
+        // map values
+        val features = FEATURES.map {
+            "target_$it" to iterator.next()
+        }.toMap()
+
+        // create final objects
+        return listOf(
+            mapOf(
+                "limit" to 100,
+                "seed_tracks" to tracks,
+                *features.toList().toTypedArray()
+            ),
+            mapOf(
+                "limit" to 100,
+                "seed_artists" to artists,
+                *features.toList().toTypedArray()
+            ),
+            mapOf(
+                "limit" to 100,
+                "seed_genres" to genres,
+                *features.toList().toTypedArray()
+            )
         )
-        map.putAll(
-            features.mapIndexed { i, feature -> "target_" + featuresMap.filterValues { it == i }.keys.first() to feature }
-                .toMap()
-        )
-
-        Log.e(TAG, "map - $map")
-
-        return mutableMapOf<String, Any>(
-            "limit" to 5,
-            "seed_genres" to "hip-hop"
-        ).toMap()
-    }
-
-    private fun optimiseModel() {
-        modelRepository.optimiseModel()
     }
 
     //i love you so fucking much and  when i looked at you just now i thought my heart was gonna explode
-    fun logTrack(track: Track) {
+
+    // ui
+    fun getAlbum() = viewModelScope.launch {
+        if (album.value?.album?.tracks != null) return@launch
+
+        loadAlbum(track.value?.track!!)
+        loadArtists(albumInternal?.album!!)
+
+        applyAlbum()
+    }
+
+    // tracks
+    fun add() = viewModelScope.launch {
+        val track = this@ContentViewModel.track.value!!.track
+
+        // reset player
+        seekTo(0)
+        getNext()
+        play()
+
+        // queue track
         batch.add(TrackModel(
             track.id,
             track.uri,
             System.currentTimeMillis()
-        ))
+        ).also { localTimeline.add(it) })
+
+        if (batch.size >= MAX_BATCH_SIZE) {
+            // dispatch the added tracks queue
+            pushBatch()
+
+            // optimise the model based on the tracks listened in this session
+            modelRepository.optimiseModel(localTimeline.map {
+                it.features.toFloatArray()
+            }.toTypedArray())
+        }
+    }
+
+    fun reject() = viewModelScope.launch {
+        rejected.add(track.value!!.track.id)
+
+        seekTo(0)
+        getNext()
+        play()
     }
 
     private suspend fun pushBatch() {
+        if (playlist.value == null) return
+
         batch.injectFeatures()
 
         withContext(Dispatchers.IO) {
-            with(userRepository.get()) {
-                timeline.addAll(batch)
-                localTimeline.clear()
+            val appUser = matcha.where(AppUser::class.java)
+                .equalTo("_id", user.value?.user?.id!!)
+                .findFirst()
+
+            with(appUser) {
+                // update the user's remote and local listening history
+                this?.timeline?.addAll(batch)
                 localTimeline.addAll(batch)
-                batch.clear()
             }
 
-            playlist.value!!.playlist?.snapshot_id = spotifyService.addTracksToPlaylist(
-                user.value!!.user.id, playlist.value!!.playlist?.id,
-                mapOf("uris" to batch.map { it.uri }.joinToString(",")), null
-            ).snapshot_id
+            matcha.where(AppUser::class.java)
+                .equalTo("_id", user.value?.user?.id!!)
+                .update(appUser!!)
+
+            try {
+                // POST to spotify playlist
+                playlist.value!!.playlist?.snapshot_id = spotifyService.addTracksToPlaylist(
+                    user.value!!.user.id, playlist.value!!.playlist?.id,
+                    mapOf("uris" to batch.map { it.uri }.joinToString(",")), emptyMap()
+                ).snapshot_id
+            } catch (e: RetrofitError) {
+                // notify the ui that the selected playlist failed
+                withContext(Dispatchers.Main) { playlist.value = null }
+            }
+        }
+
+        batch.clear()
+    }
+
+    private suspend fun createPlaceholderAlbum(wrappedTrack: TrackWrapper) = Album().apply {
+        id = wrappedTrack.track.id
+        name = wrappedTrack.track.name
+    }.wrap(wrappedTrack.thumbnail)
+
+    private suspend fun getNext() {
+        // the next batch has already been requested from the Spotify Api
+        // listen for changes to ContentViewModel.track
+        if (isWaiting) return
+
+        // get next track in the queue
+        val next = tracks.poll()
+
+        if (next?.track?.album?.id != album.value?.album?.id) {
+            album.value?.album = null
+        }
+
+        track.value = next
+
+        // if the new track is not null create a placeholder
+        // album using the album name and bitmap provided by the track object
+        // and notify the ui
+        // this prevents a blank ui while the full album info (including tracks)
+        // is being loaded
+        if (next != null) {
+            album.value = createPlaceholderAlbum(next)
+        }
+
+        if (tracks.peek() == null) {
+            nextTrack.value = null
+
+            // load next batch of tracks
+            viewModelScope.launch(Dispatchers.Main) {
+                loadNextTracks()
+            }
+        } else {
+            nextTrack.value = tracks.peek()
         }
     }
 
-    // ui
-    private var first = true
+    private suspend fun loadNextTracks() {
+        isWaiting = true
 
-    fun add() {
-        val track = this.track.value!!.track
+        // get track features and create the corresponding requests
+        val nextTrackFeatures = getNextTrackFeatures()
+        val requestObject = createParamsObject(nextTrackFeatures)
 
-        batch.add(TrackModel(
-            track.id,
-            track.uri,
-            System.currentTimeMillis()
-        ))
-
-        getNext()
-    }
-
-    fun no() {
-        no.add(track.value!!.track.id)
-
-        getNext()
-    }
-
-    fun getNext() {
-        if (
-            track.value != null &&
-            (!batch.any { it.id == track.value?.track?.id } ||
-                    !no.contains(track.value?.track?.id))
-        ) return
-
-        viewModelScope.launch {
-            // The next batch has already been requested from the Spotify Api, listen for changes to ContentViewModel.track
-            if (isWaiting) return@launch
-
-            val next = tracks.poll()
-
-            if (next?.track?.album?.id != album.value?.album?.id) {
-                album.value?.album = null
+        // perform the requests
+        val t = withContext(Dispatchers.IO) {
+            requestObject.flatMap {
+                spotifyService.getRecommendations(it).tracks
             }
+        }.distinctBy { it.id }
+            .toMutableList()
 
-            track.value = next
+        // update the ui
+        if (track.value == null) {
+            track.value = t.removeFirst().let { it.wrap() }
 
-            if (next != null) {
-                //setAlbumBitmap(withContext(Dispatchers.IO) { from(next.track.album.images[0].url)!! })
-                applyAlbum(next.track)
-            }
+            album.value = createPlaceholderAlbum(track.value!!)
+        }
 
-            if (tracks.peek() == null) {
-                Log.e(TAG, "doing GET")
+        if (nextTrack.value == null) {
+            nextTrack.value = t.first().wrap()
+        }
 
-                nextTrack.value = null
+        // queue the tracks
+        t.forEach {
+            tracks.add(it.wrap())
 
-                if (first) {
-                    first = false
-                    get()
-                }
-            } else {
-                Log.e(TAG, "doing SET")
-                nextTrack.value = tracks.peek()
-            }
+            isWaiting = false
         }
     }
 
-    private fun applyArtists(track: Track) {
-        Log.e(TAG, "applyArtists() - track=${track.name}{${track.id}}")
+    // album
+    // these functions are related to the ExtraFragment ui
 
-        val album = albums.find { it.album?.id == track.album.id }
-
-        val ids = arrayOf(
-            *track.artists.map { it.id }.toTypedArray(),
-            *album?.album?.tracks?.items?.flatMap { it.artists.map { it.id } }!!
-                .toTypedArray()).distinct()
-
-        Log.e(TAG, "ids - $ids")
-
-        artists.value = allArtists.filter {
-            ids.contains(it.artist?.id ?: "")
-        }
+    // update the ui with the new album and artists
+    private fun applyAlbum() = viewModelScope.launch {
+        artists.value = allArtists
+        album.value = albumInternal
     }
 
+    // load album
+    private suspend fun loadAlbum(track: Track) {
+        val a = withContext(Dispatchers.IO) { spotifyService.getAlbum(track.album.id).wrap() }
+        this@ContentViewModel.albumInternal = a
+    }
+
+    // artists
     fun getArtistTracks(artist: ArtistSimple) = viewModelScope.launch {
         val needsTracks = !(artistTracks.value?.containsKey(artist.id) ?: false)
 
@@ -338,153 +468,37 @@ class ContentViewModel(
         }
     }
 
-    private fun applyAlbum(track: Track? = this.track.value?.track) = viewModelScope.launch {
-        applyArtists(track!!)
+    private suspend fun loadArtists(album: Album) {
+        // get all distinct artist ids from this album
+        val artists = album.tracks.items.flatMap { it.artists }
+            .distinctBy { it.id }
 
-        album.value = with(albums.find { it.album?.id == track?.album?.id }) {
-            if (this != null) this
-            else {
-                loadAlbums(tracks.map { it!!.track }.toTypedArray())
-                albums.first()
-            }
+        val ids = artists.joinToString(",") { it.id }
+
+        // GET from spotify
+        allArtists = withContext(Dispatchers.IO) {
+            spotifyService.getArtists(ids).artists.map { it.wrap() }.toMutableList()
         }
-    }
-
-    // ui loaders
-    private suspend fun get() {
-        isWaiting = true
-        Log.e(TAG, "get()")
-
-        val nextTrackFeatures = floatArrayOf()//getNextTrackFeatures()
-        val requestObject = createParamsObject(nextTrackFeatures)
-
-        val t =
-            withContext(Dispatchers.IO) {
-                spotifyService.getRecommendations(requestObject)
-            }
-
-        loadAlbums(t.tracks.toTypedArray())
-
-        if (track.value == null) {
-            track.value = t!!.tracks.removeFirst().let {
-                TrackWrapper(it,
-                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
-                )
-            }
-
-            applyAlbum()
-        }
-
-        if (nextTrack.value == null) {
-            nextTrack.value = t!!.tracks.first().let {
-                TrackWrapper(it,
-                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
-                )
-            }
-        }
-
-        tracks.addAll(t!!.tracks
-            .map {
-                TrackWrapper(
-                    it,
-                    albums.find { w -> w.album?.id == it.album.id }?.bitmap
-                )
-            })
-
-        isWaiting = false
     }
 
     private suspend fun loadArtistTracks(artist: ArtistSimple): List<TrackWrapper> {
+        // GET artist tracks from spotify
         val tracks = withContext(Dispatchers.IO) {
             spotifyService.getArtistTopTrack(artist.id,
                 user.value?.user?.country ?: "")
-                .tracks.map {
-                    TrackWrapper(
-                        it,
-                        from(it.album.images.firstOrNull()?.url)
-                    )
-                }
+                .tracks.map { it.wrap() }
         }
 
         return tracks
     }
 
-    private suspend fun loadArtists(albums: List<Album>, reloadAll: Boolean = true) {
-        val artists =
-            albums.flatMap { it.tracks.items.flatMap { it.artists } }.distinctBy { it.id }.take(27)
-        val ids = artists.joinToString(",") { it.id }
-
-        allArtists = if (artists.size > 10) splitLoad(ids.split(","))
-        else withContext(Dispatchers.IO) {
-            spotifyService.getArtists(ids).artists.map {
-                ArtistWrapper(
-                    it,
-                    from(it.images.firstOrNull()?.url)
-                )
-            }.toMutableList()
-        }
-    }
-
-    private suspend fun loadAlbums(tracks: Array<Track>) {
-        val ids = tracks.joinToString(",") { it.album.id }
-
-        albums = withContext(Dispatchers.IO) {
-            spotifyService.getAlbums(ids).albums.map {
-                AlbumWrapper(it,
-                    from(it.images.first().url)
-                )
-            }
-        }.toTypedArray()
-
-        loadArtists(albums.map { it.album!! })
-    }
-
     // playlists
-
-    /**
-     * load all
-     * get main id
-     * update ui
-     */
-    private fun getMainPlaylistId(): String? {
-        localRealm.executeTransaction {
-            it.where(RealmPlaylist::class.java)
-                .findAll()
-                .deleteAllFromRealm()
-        }
-
-        return null
-    }
-
-    private suspend fun loadUserPlaylists() {
-        withContext(Dispatchers.IO) {
-            userPlaylists = spotifyService.getCurrentUserPlaylists().items
-        }
-    }
-
-    private suspend fun prepareMainPlaylist() {
-        val id = getMainPlaylistId()
-            ?: userPlaylists.firstOrNull { it.owner.id == user.value?.user?.id }?.id
-
-        playlist.value = userPlaylists.find { it.id == id }.let {
-            Playlist().apply {
-                this.id = it?.id
-                this.name = it?.name
-                this.uri = it?.uri
-            }.wrap()
-        }
-    }
-
     private suspend fun loadPlaylists() {
         loadUserPlaylists()
 
         playlists.value = userPlaylists
-            .filter {
-                (it.owner.id == user.value?.user?.id).also { b ->
-                    Log.e(TAG,
-                        "${it.name} - accepted=$b name=${it.owner.display_name} user=${user.value?.user?.id}")
-                }
-            }
+            // filter user's playlists
+            .filter { it.owner.id == user.value?.user?.id }
             .map {
                 Playlist().apply {
                     id = it.id
@@ -496,32 +510,58 @@ class ContentViewModel(
         prepareMainPlaylist()
     }
 
-    // the spotify web api can handle a maximum request size of 50 ids
-    private suspend fun splitLoad(
-        ids: List<String>,
-        batchSize: Int = 50,
-    ): MutableList<ArtistWrapper> {
-        val artists = mutableListOf<ArtistWrapper>()
-
-        ids.chunked(batchSize).forEach {
-            val ids = it.joinToString(",")
-
-            artists.addAll(
-                withContext(Dispatchers.IO) {
-                    spotifyService.getArtists(ids).artists.map {
-                        ArtistWrapper(
-                            it,
-                            from(it.images.firstOrNull()?.url)
-                        )
-                    }
-                }
-            )
-        }
-
-        return artists
+    private suspend fun getMainPlaylistId() = withContext(Dispatchers.IO) {
+        // get the id of the playlist the user has selected to
+        // add tracks to
+        matcha.where(AppUser::class.java)
+            .equalTo("_id", user.value?.user?.id!!)
+            .findFirst()
+            ?.playlist
     }
 
-    //player state
+    fun setMainPlaylist(id: String?) = viewModelScope.launch {
+        playlist.value = playlists.value?.find { it.playlist?.id == id }
+
+        withContext(Dispatchers.IO) {
+            val u = matcha.where(AppUser::class.java)
+                .equalTo("_id", user.value?.user?.id!!)
+                .findFirst()
+
+            u?.playlist = id
+
+            u?.let {
+                matcha.where(AppUser::class.java)
+                    .equalTo("_id", user.value?.user?.id!!)
+                    .upsert(it)
+            }
+
+//            realm.executeTransaction { realm ->
+//                u?.let { realm.insertOrUpdate(it) }
+//            }
+        }
+    }
+
+    private suspend fun prepareMainPlaylist() {
+        // get the playlist object from the user's playlists
+        // or the first playlist available if the user hasn't selected any
+        val id = getMainPlaylistId() ?: userPlaylists.firstOrNull {
+            it.owner.id == user.value?.user?.id
+        }?.id
+
+        playlist.value = userPlaylists.find { it.id == id }.let {
+            Playlist().apply {
+                this.id = it?.id
+                this.name = it?.name
+                this.uri = it?.uri
+            }.wrap()
+        }
+    }
+
+    private suspend fun loadUserPlaylists() = withContext(Dispatchers.IO) {
+        userPlaylists = spotifyService.getCurrentUserPlaylists().items
+    }
+
+    //player
     fun play() {
         val uri = track.value!!.track.uri
 
@@ -533,12 +573,15 @@ class ContentViewModel(
 
         startPlayerStateListener()
 
-        playerApi.playerState.setResultCallback {
-            if (it.track.uri == uri) playerApi.resume() else playerApi.play(uri)
-            if (it.playbackOptions.repeatMode != Repeat.ONE) playerApi.setRepeat(Repeat.ONE)
-        }
-
         playerApi.play(uri)
+    }
+
+    fun resume() {
+        val playerApi = spotifyAppRemote.playerApi
+
+        startPlayerStateListener()
+
+        playerApi.resume()
     }
 
     fun pause() {
@@ -548,24 +591,36 @@ class ContentViewModel(
     }
 
     fun seekTo(position: Long) {
+        val playerApi = spotifyAppRemote.playerApi
         progress.setValue(position)
+        playerApi.seekTo(position)
     }
 
-    private fun startPlayerStateListener() {
+    var shouldPausePlayerStateListener = false
+
+    fun startPlayerStateListener() {
+        playerStateListener = Executors.newSingleThreadScheduledExecutor()
+
         playerStateListener.scheduleAtFixedRate({
-            spotifyAppRemote
-                .playerApi
-                .playerState
-                .setResultCallback { data: PlayerState -> progress.setValue(data.playbackPosition) }
+            val playerApi = spotifyAppRemote.playerApi
+
+            playerApi.playerState
+                .setResultCallback {
+                    if (it.playbackPosition == it.track.duration) {
+                        playerApi.pause()
+                        playerApi.seekTo(0)
+                    }
+                    if (!shouldPausePlayerStateListener) progress.value = it.playbackPosition
+                }
         }, 0, 500, TimeUnit.MILLISECONDS)
     }
 
-    private fun stopPlayerStateListener() {
+    fun stopPlayerStateListener() {
         playerStateListener.shutdown()
     }
 
-// extension utils
 
+    // extension utils
     // set track features of each track of a mutable list of track models
     private suspend fun MutableList<TrackModel>.injectFeatures() {
         val ids = this.map { it.id }.joinToString(",")
@@ -580,13 +635,16 @@ class ContentViewModel(
         }
     }
 
-    // get the features of a track as a float array indexed based on featuresMap using reflection
+    // get the features of a track as a float array indexed based on FEATURES using reflection
     private fun AudioFeaturesTrack.extractFeatures(): FloatArray {
-        val features = Array(featuresMap.size) { i ->
-            val f = featuresMap.filterValues { it == i }.keys.first()
-            AudioFeaturesTrack::class.java
+        val features = Array(FEATURES.size) { i ->
+            val f = FEATURES.filterIndexed { it, _ -> it == i }.first()
+
+            val value = AudioFeaturesTrack::class.java
                 .getField(f)
-                .get(this) as Float
+                .get(this) as Number
+
+            value.toFloat()
         }
 
         return features.toFloatArray()
@@ -603,9 +661,8 @@ class ContentViewModel(
 
                 return ContentViewModel(
                     app.matcha,
-                    app.userRepository,
                     app.modelRepository,
-                    app.localRealm
+                    app.realm
                 ) as T
             }
         }

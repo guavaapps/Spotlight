@@ -14,6 +14,7 @@ import com.guavaapps.components.listview.ListView
 import com.guavaapps.components.listview.NestedScrollableHost
 import com.guavaapps.components.timestring.TimeString
 import com.pixel.spotifyapi.Objects.Artist
+import com.spotify.protocol.types.Album
 
 private const val TAG = "ArtistFragment"
 
@@ -26,6 +27,8 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
     private lateinit var artistTracks: ListView
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        Log.e(TAG, "-------- view created -----------")
+
         super.onViewCreated(view, savedInstanceState)
 
         linkNestedScrollableHost()
@@ -49,6 +52,9 @@ class ArtistFragment(private val wrappedArtist: Artist?) :
             val views = tracks.map {
                 TrackView.create(requireContext(), it) {
                     Log.e(TAG, "clicked artist track - ${it.track.name}")
+
+                    viewModel.track.value = it
+                    viewModel.play(it.track.uri)
                 }
             }
 

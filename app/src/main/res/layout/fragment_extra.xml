@@ -11,10 +11,12 @@
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
         app:layout_constraintTop_toTopOf="parent"
-        app:tabIndicator="@drawable/tab_indicator"
+        app:tabIndicator="@drawable/tab_indicator2"
         app:tabMaxWidth="512dp"
         app:tabTextAppearance="?attr/textAppearanceTitleMedium"
-        app:tabIndicatorFullWidth="false"
+        app:tabIndicatorGravity="stretch"
+        app:tabIndicatorFullWidth="true"
+        app:tabRippleColor="@android:color/transparent"
         app:tabUnboundedRipple="true" />
 
     <androidx.viewpager2.widget.ViewPager2

@@ -1,6 +1,7 @@
 package com.guavaapps.spotlight
 
 import android.util.Log
+import androidx.annotation.FloatRange
 import org.tensorflow.lite.Interpreter
 import java.io.File
 
@@ -10,6 +11,11 @@ class DLSTMPModel(model: File) {
     private val LOOK_BACK = 1
 
     private var interpreter: Interpreter
+    val inputShape: IntArray
+        get() = interpreter.getInputTensor(0).shape()
+
+    val outputShape: IntArray
+        get() = interpreter.getOutputTensor(0).shape()
 
     init {
         interpreter = Interpreter(model)
@@ -18,27 +24,25 @@ class DLSTMPModel(model: File) {
     fun getNext(timeline: Array<FloatArray>): FloatArray {
         interpreter.allocateTensors()
 
-        //
+        val modelInputShape = interpreter.getInputTensor(0).shape().joinToString()
+        val inputShape = intArrayOf(timeline.size, timeline.first().size).joinToString()
 
-//        checkInputShape(interpreter, timeline)
+        Log.e(TAG, "input shape check - modelInputShape[$modelInputShape] inputShape=[$inputShape]")
 
         val output = arrayOf(
             FloatArray(timeline.first().size)
         )
 
-        val timelineScaler = scaleMinMax(
+        val scaledTimeline = FeatureScaler.scale(
             timeline
                 .takeLast(LOOK_BACK)
                 .reversed()
                 .toTypedArray()
         )
-        val scaledTimeline = timelineScaler.result
 
         interpreter.run(arrayOf(scaledTimeline), output)
 
-        interpreter.close()
-
-        return invertMinMax(timelineScaler.apply { result = output }).first()
+        return FeatureScaler.invert(output).first()
     }
 
     private fun checkInputShape(interpreter: Interpreter, timeline: Array<FloatArray>) {
@@ -49,46 +53,42 @@ class DLSTMPModel(model: File) {
             "Timeline doesn't match required input shape - inputShape=[$inputShape] timeline=[${timeline.first().size}]"
         )
     }
+}
 
-    private fun scaleMinMax(data: Array<FloatArray>): Scaler {
-        var min = Float.MIN_VALUE
-        var max = Float.MAX_VALUE
 
-        data.forEach { x ->
-            if (x.min() < min) min = x.min()
-            if (x.max() > max) max = x.max()
-        }
+object FeatureScaler {
+    private val STANDARD_RANGE = 0f..1f
+    private val FULL_RANGE = Float.MIN_VALUE..Float.MAX_VALUE
 
-        val d = max - min
-
-        val scaled = data.map {
-            it.map {
-                (it - min) / d
-            }.toFloatArray()
-        }.toTypedArray()
-
-        return Scaler(
-            scaled,
-            min,
-            max
-        )
-    }
-
-    private fun invertMinMax(data: Scaler): Array<FloatArray> {
-        val delta = data.max - data.min
-
-        val inverted = data.result.map {
-            it.map {
-                it * delta + data.min
-            }.toFloatArray()
-        }.toTypedArray()
-
-        return inverted
-    }
-
-    private data class Scaler(
-        var result: Array<FloatArray>,
-        var min: Float,
-        var max: Float,
+    private val ranges = arrayOf(
+        STANDARD_RANGE, // acousticness
+        STANDARD_RANGE, // danceability
+        STANDARD_RANGE, // energy
+        STANDARD_RANGE, // instrumentallness
+        STANDARD_RANGE, // liveness
+        FULL_RANGE, // loudness
+        STANDARD_RANGE, // speechiness
+        FULL_RANGE, // tempo
+        STANDARD_RANGE // valence
     )
+
+    fun scale(features: Array<FloatArray>) = features.map {
+        it.mapIndexed { i, it ->
+            val min = ranges[i].start
+            val max = ranges[i].endInclusive
+            val delta = max - min
+
+            (it - min) / delta
+        }.toFloatArray()
+    }.toTypedArray()
+
+    fun invert(features: Array<FloatArray>) = features.map {
+        it.mapIndexed { i, it ->
+            val min = ranges[i].start
+            val max = ranges[i].endInclusive
+            val delta = max - min
+
+            it * delta + min
+        }.toFloatArray()
+    }.toTypedArray()
 }

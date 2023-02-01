@@ -3,6 +3,7 @@ package com.guavaapps.spotlight
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.text.Spannable
 import android.text.SpannableString
@@ -28,7 +29,9 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.guavaapps.components.Components.getPx
 import com.guavaapps.spotlight.ColorSet.Companion.create
+import com.pixel.spotifyapi.Objects.Album
 import com.pixel.spotifyapi.Objects.ArtistSimple
+import com.pixel.spotifyapi.Objects.Track
 
 private const val TAG = "ExtraFragment"
 
@@ -80,6 +83,20 @@ class ExtraFragment : Fragment() {
         albumFragment = AlbumFragment()
         albumFragment?.onTrackSelected {
             Log.e(TAG, "track selected - ${it?.name}")
+            it?.uri?.let { uri ->
+                viewModel.track.value = TrackWrapper(
+                    Track().apply {
+                        id = it.id
+                        name = it.name
+                        this.uri = uri
+                        album = viewModel.album.value?.album
+                        artists = it.artists
+                        duration_ms = it.duration_ms
+                    },
+                    viewModel.album.value?.bitmap
+                )
+                viewModel.play(uri)
+            }
         }
 
         requireView().addOnLayoutChangeListener(object : OnLayoutChangeListener {
@@ -106,17 +123,14 @@ class ExtraFragment : Fragment() {
             }
         })
 
-        viewModel.album.observe(viewLifecycleOwner) { albumWrapper: AlbumWrapper? ->
-            if (albumWrapper?.album != null) {
+        viewModel.album.observe(viewLifecycleOwner) {
+            if (it != null && !viewModel.artists.value.isNullOrEmpty()) {
                 val tabs = mutableListOf<Fragment>()
 
                 tabs.add(albumFragment!!)
 
-                val artists = albumWrapper.album?.tracks?.items?.flatMap { it.artists }
-                    ?.toTypedArray()?.distinctBy { it.id } ?: emptyList<ArtistSimple>()
-
-                artists.forEach {
-                    tabs.add(ArtistFragment(viewModel.artists.value?.find { w -> w.artist?.id == it.id }?.artist))
+                viewModel.artists.value?.forEach {
+                    tabs.add(ArtistFragment(it.artist))
                 }
 
                 adapter!!.setItems(tabs)
@@ -124,20 +138,19 @@ class ExtraFragment : Fragment() {
 
                 TabLayoutMediator(tabLayout, viewPager) { tab, position ->
                     tab.text = if (position == 0) {
-                        "From " + albumWrapper.album?.name
+                        "From " + viewModel.album.value?.album?.name
                     } else {
-                        artists.map { it.name }[position - 1]
+                        viewModel.artists.value?.get(position - 1)?.artist?.name
                     }
                 }.attach()
 
-                applyAlbum(albumWrapper)
+                applyColors(it.bitmap!!)
             }
         }
 
         viewModel.track.observe(viewLifecycleOwner) {
-            if (it?.track?.album?.id != viewModel.album.value?.album?.id) {
-                tabLayout.removeAllTabs()
-//                viewPager.removeAllViews()
+            if (it != null) {
+                applyColors(it?.thumbnail!!)
             }
         }
     }
@@ -183,6 +196,8 @@ class ExtraFragment : Fragment() {
     }
 
     private fun applyAlbumTabColors() {
+        if (tabLayout.tabCount == 0) return
+
         with(tabLayout.getTabAt(0)!!) {
             if (isSelected) applyAlbumTabSelected(this)
             else applyAlbumTabUnselected(this)
@@ -193,11 +208,11 @@ class ExtraFragment : Fragment() {
         applyArtistTabColors()
         applyAlbumTabColors()
 
-        tabLayout.setSelectedTabIndicatorColor(colorSet.primary)
+        tabLayout.setSelectedTabIndicatorColor(colorSet.surface.first().toHct().apply { tone = 40f }
+            .toInt())//primary)
     }
 
-    private fun applyAlbum(wrappedAlbum: AlbumWrapper) {
-        val bitmap = wrappedAlbum.bitmap
+    private fun applyColors(bitmap: Bitmap) {
         val colorSet = create(bitmap)
 
         val primaryAnimator = ValueAnimator.ofObject(

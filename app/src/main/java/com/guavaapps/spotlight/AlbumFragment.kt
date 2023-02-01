@@ -1,5 +1,8 @@
 package com.guavaapps.spotlight
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
+import android.graphics.Bitmap
 import com.guavaapps.spotlight.ColorSet.Companion.create
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -63,6 +66,8 @@ class AlbumFragment : Fragment() {
             val album = viewModel.album.value?.album ?: return@observe
 
             makeSelection(it?.track, album)
+
+            applyColors(it?.thumbnail!!)
         }
     }
 
@@ -144,6 +149,63 @@ class AlbumFragment : Fragment() {
         durationView.setTextColor(colorSet!!.secondary)
 
         return item
+    }
+
+    private fun applyColors(bitmap: Bitmap) {
+        val colorSet = create(bitmap)
+
+        items.forEach {
+            val typedArray =
+                requireContext().theme.obtainStyledAttributes(android.R.style.Theme_Material_NoActionBar,
+                    intArrayOf(android.R.attr.selectableItemBackground))
+
+            val ripple =
+                resources.getDrawable(typedArray.getResourceId(0, 0), requireContext().theme)
+                    .mutate()
+
+            val rippleAnimator = ValueAnimator.ofObject(
+                ArgbEvaluator(),
+                this.colorSet.ripple,
+                colorSet.ripple
+            )
+
+            with(rippleAnimator) {
+                duration = 350
+                addUpdateListener { v ->
+                    this@AlbumFragment.colorSet.ripple = v.animatedValue as Int
+
+                    ripple.setTint(this@AlbumFragment.colorSet.ripple)
+
+                    it.background = ripple
+                }
+            }
+
+
+            val titleView = it.findViewById<TextView>(R.id.title_view)
+            val artistsView = it.findViewById<TextView>(R.id.artists_view)
+            val durationView = it.findViewById<TextView>(R.id.duration_view)
+
+            val secondaryAnimator = ValueAnimator.ofObject(
+                ArgbEvaluator(),
+                this.colorSet.secondary,
+                colorSet.secondary
+            )
+
+            with(secondaryAnimator) {
+                duration = 350
+                addUpdateListener {
+                    this@AlbumFragment.colorSet.secondary = it.animatedValue as Int
+
+                    titleView.setTextColor(this@AlbumFragment.colorSet.secondary)
+                    artistsView.setTextColor(this@AlbumFragment.colorSet.secondary)
+                    durationView.setTextColor(this@AlbumFragment.colorSet.secondary)
+
+                }
+            }
+
+            rippleAnimator.start()
+            secondaryAnimator.start()
+        }
     }
 
     private fun setAlbum(album: AlbumWrapper) {

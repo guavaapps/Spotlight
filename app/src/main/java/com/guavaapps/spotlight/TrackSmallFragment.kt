@@ -3,141 +3,112 @@ package com.guavaapps.spotlight
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.fragment.app.viewModels
-import androidx.lifecycle.Observer
 import com.google.android.material.button.MaterialButton
 import com.guavaapps.spotlight.ColorSet.Companion.create
-import com.spotify.android.appremote.api.PlayerApi
-import com.spotify.android.appremote.api.SpotifyAppRemote
-import com.spotify.protocol.types.PlayerState
 
-class TrackSmallFragment : Fragment() {
+class TrackSmallFragment : Fragment(R.layout.fragment_track_small) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
     private var isPlaying = false
 
-    private var mSpotifyAppRemote: SpotifyAppRemote? = null
-    private var mPlayerApi: PlayerApi? = null
+    private var colorSet = ColorSet()
 
-    private var mTrack: TrackWrapper? = null
-    private var mColorSet = ColorSet()
-
-    private lateinit var mPlayDrawable: Drawable
-    private lateinit var mPauseDrawable: Drawable
-    private lateinit var mPlayButton: MaterialButton
-    private lateinit var mTrackNameView: TextView
-    private lateinit var mTrackArtistsView: TextView
-
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View? {
-        return inflater.inflate(R.layout.fragment_track_small, container, false)
-    }
+    private lateinit var playDrawable: Drawable
+    private lateinit var pauseDrawable: Drawable
+    private lateinit var playButton: MaterialButton
+    private lateinit var trackNameView: TextView
+    private lateinit var trackArtistsView: TextView
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        mPlayDrawable = resources.getDrawable(R.drawable.ic_play_24, requireContext().theme)
-        mPauseDrawable = resources.getDrawable(R.drawable.ic_pause_24, requireContext().theme)
-        mPlayButton = view.findViewById(R.id.play)
-        mTrackNameView = view.findViewById(R.id.track_name)
-        mTrackArtistsView = view.findViewById(R.id.artists)
+        playDrawable = resources.getDrawable(R.drawable.ic_play_24, requireContext().theme)
+        pauseDrawable = resources.getDrawable(R.drawable.ic_pause_24, requireContext().theme)
+        playButton = view.findViewById(R.id.play)
+        trackNameView = view.findViewById(R.id.track_name)
+        trackArtistsView = view.findViewById(R.id.artists)
 
-        with(mPlayButton) {
-            setOnClickListener { v: View? ->
+        with(playButton) {
+            setOnClickListener {
                 if (isPlaying) {
                     isPlaying = false
 
-                    icon = mPlayDrawable
+                    icon = playDrawable
 
                     viewModel.pause()
                 } else {
                     isPlaying = true
 
-                    icon = mPauseDrawable
+                    icon = pauseDrawable
 
                     viewModel.play()
                 }
             }
         }
 
-        viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
-            if (trackWrapper != null) {
-                mTrack = trackWrapper
-                mTrackNameView.text = trackWrapper.track.name
-                val artists: MutableList<String> = ArrayList()
-                for (artistSimple in trackWrapper.track.artists) {
-                    artists.add(artistSimple.name)
-                }
-                mTrackArtistsView.text = java.lang.String.join(", ", artists)
-                mTrackNameView.isSelected = true
-                nextTrack(trackWrapper)
+        viewModel.track.observe(viewLifecycleOwner) {
+            if (it != null) {
+                trackNameView.text = it.track.name
+                trackArtistsView.text = it.track.artists.joinToString { it.name }
+
+                trackNameView.isSelected = true
+                trackArtistsView.isSelected = true
+
+                applyColors(it.thumbnail!!)
             }
         }
-
-//        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote? ->
-//            mSpotifyAppRemote = appRemote
-//            mPlayerApi = mSpotifyAppRemote!!.playerApi
-//            mPlayerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
-//                if (data.track.uri == mTrack!!.track.uri) {
-//                    if (data.isPaused) {
-//                        mPlayButton.icon = mPlayDrawable
-//                    } else {
-//                        mPlayButton.icon = mPauseDrawable
-//                    }
-//                }
-//            }
-//        }
     }
 
-    private fun nextTrack(wrappedTrack: TrackWrapper) {
-        val bitmap = wrappedTrack.thumbnail
+    private fun applyColors(bitmap: Bitmap) {
         val colorSet = create(bitmap)
+
         val primaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.primary, colorSet.primary)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.primary, colorSet.primary)
+
         primaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        primaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.primary = animation.animatedValue as Int
-            mTrackNameView.setTextColor(mColorSet.primary)
-            mPlayButton.iconTint = ColorStateList.valueOf(mColorSet.primary)
+
+        primaryAnimator.addUpdateListener {
+            this.colorSet.primary = it.animatedValue as Int
+            trackNameView.setTextColor(this.colorSet.primary)
+            playButton.iconTint = ColorStateList.valueOf(this.colorSet.primary)
         }
+
         primaryAnimator.start()
         val secondaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.secondary, colorSet.secondary)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.secondary, colorSet.secondary)
         secondaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        secondaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.secondary = animation.animatedValue as Int
-            mTrackArtistsView.setTextColor(mColorSet.secondary)
+        secondaryAnimator.addUpdateListener {
+            this.colorSet.secondary = it.animatedValue as Int
+            trackArtistsView.setTextColor(this.colorSet.secondary)
         }
         secondaryAnimator.start()
         val tertiaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.tertiary, colorSet.tertiary)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.tertiary, colorSet.tertiary)
         tertiaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        tertiaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.tertiary = animation.animatedValue as Int
+        tertiaryAnimator.addUpdateListener {
+            this.colorSet.tertiary = it.animatedValue as Int
         }
         tertiaryAnimator.start()
         val rippleAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.ripple, colorSet.ripple)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.ripple, colorSet.ripple)
         rippleAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        rippleAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.ripple = animation.animatedValue as Int
-            mPlayButton!!.rippleColor = ColorStateList.valueOf(mColorSet.ripple)
+        rippleAnimator.addUpdateListener {
+            this.colorSet.ripple = it.animatedValue as Int
+            playButton!!.rippleColor = ColorStateList.valueOf(this.colorSet.ripple)
         }
         rippleAnimator.start()
-        mColorSet = colorSet
+        this.colorSet = colorSet
     }
 }

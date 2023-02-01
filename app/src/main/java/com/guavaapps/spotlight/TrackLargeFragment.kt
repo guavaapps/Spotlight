@@ -3,241 +3,227 @@ package com.guavaapps.spotlight
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.SeekBar.OnSeekBarChangeListener
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatSeekBar
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.fragment.app.viewModels
-import androidx.lifecycle.Observer
 import com.google.android.material.button.MaterialButton
 import com.guavaapps.spotlight.ColorSet.Companion.create
-import com.spotify.android.appremote.api.PlayerApi
-import com.spotify.android.appremote.api.SpotifyAppRemote
-import com.spotify.protocol.types.PlayerState
-import java.util.concurrent.ScheduledExecutorService
+import com.pixel.spotifyapi.Objects.Track
 
-class TrackLargeFragment : Fragment() {
+class TrackLargeFragment : Fragment(R.layout.fragment_track_large) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
-    private var spotifyAppRemote: SpotifyAppRemote? = null
-    private var playerApi: PlayerApi? = null
-    private var mTrack: TrackWrapper? = null
-    private var mColorSet = ColorSet()
-    private val mPlayerStateListener: ScheduledExecutorService? = null
+    private var colorSet = ColorSet()
+
     private var isPlaying = false
-    private val mProgress: Long = 0
-    private lateinit var mPlayDrawable: Drawable
-    private lateinit var mPauseDrawable: Drawable
-    private lateinit var mTrackNameView: TextView
-    private lateinit var mPlayButton: MaterialButton
-    private lateinit var mSeekBar: AppCompatSeekBar
-    private lateinit var mProgressView: TextView
-    private lateinit var mDurationView: TextView
-    private lateinit var mSpotifyButton: MaterialButton
-    override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View? {
-        return inflater.inflate(R.layout.fragment_track_large, container, false)
-    }
+
+    private lateinit var playDrawable: Drawable
+    private lateinit var pauseDrawable: Drawable
+
+    private lateinit var trackNameView: TextView
+    private lateinit var artistsView: TextView
+
+    private lateinit var playButton: MaterialButton
+    private lateinit var seekBar: AppCompatSeekBar
+
+    private lateinit var progressView: TextView
+    private lateinit var durationView: TextView
+
+    private lateinit var spotifyButton: MaterialButton
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        mPlayDrawable = resources.getDrawable(R.drawable.ic_play_24, requireContext().theme)
-        mPauseDrawable = resources.getDrawable(R.drawable.ic_pause_24, requireContext().theme)
-        mTrackNameView = view.findViewById(R.id.track_name_view)
-        mPlayButton = view.findViewById(R.id.play_button)
-        mSeekBar = view.findViewById(R.id.seek_bar)
-        mProgressView = view.findViewById(R.id.progress_view)
-        mDurationView = view.findViewById(R.id.duration_view)
-        mSpotifyButton = view.findViewById(R.id.spotify_button)
 
-        with(mPlayButton) {
+        playDrawable = resources.getDrawable(R.drawable.ic_play_24, requireContext().theme)
+        pauseDrawable = resources.getDrawable(R.drawable.ic_pause_24, requireContext().theme)
+
+        trackNameView = view.findViewById(R.id.track_name_view)
+        artistsView = view.findViewById(R.id.artists_view)
+
+        playButton = view.findViewById(R.id.play_button)
+        seekBar = view.findViewById(R.id.seek_bar)
+
+        progressView = view.findViewById(R.id.progress_view)
+        durationView = view.findViewById(R.id.duration_view)
+
+        spotifyButton = view.findViewById(R.id.spotify_button)
+
+        with(playButton) {
             setOnClickListener {
                 if (!isPlaying) {
                     isPlaying = true
-                    icon = mPauseDrawable
+                    icon = pauseDrawable
                     viewModel.play()
                 } else {
                     isPlaying = false
-                    icon = mPlayDrawable
+                    icon = playDrawable
                     viewModel.pause()
                 }
             }
         }
 
-        with(mSeekBar) {
+        with(seekBar) {
             setOnSeekBarChangeListener(object : OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                    if (fromUser) viewModel.progress.value = progress.toLong()
+                    if (fromUser) {
+                        viewModel.shouldPausePlayerStateListener = true
+                        viewModel.progress.value = progress.toLong()
+                    }
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar) {}
 
                 override fun onStopTrackingTouch(seekBar: SeekBar) {
-//                    viewModel.spotifyAppRemote.value!!
-//                        .playerApi
-//                        .seekTo(mProgress)
+                    viewModel.shouldPausePlayerStateListener = false
+                    viewModel.seekTo(progress.toLong())
                 }
             })
         }
 
-//        mSeekBar!!.setOnSeekBarChangeListener(object : OnSeekBarChangeListener {
-//            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-//                if (fromUser) viewModel!!.progress.setValue(progress.toLong())
-//            }
-//
-//            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-//            override fun onStopTrackingTouch(seekBar: SeekBar) {
-//                viewModel!!.spotifyAppRemote.value!!
-//                    .getPlayerApi()
-//                    .seekTo(mProgress)
-//            }
-//        })
+        viewModel.track.observe(viewLifecycleOwner) {
+            if (it != null) {
+                trackNameView.text = it.track.name
+                artistsView.text = it.track.artists.joinToString { it.name }
+                applyTrackDuration(it.track)
 
-        //
-//        viewModel.spotifyAppRemote.observe(viewLifecycleOwner) { appRemote: SpotifyAppRemote ->
-//            spotifyAppRemote = appRemote
-//            playerApi = appRemote.playerApi
-//            playerApi!!.subscribeToPlayerState().setEventCallback { data: PlayerState ->
-//                if (data.track.uri == mTrack!!.track.uri) {
-//                    if (data.isPaused) {
-//                        mPlayButton!!.setIcon(mPlayDrawable)
-//                    } else {
-//                        mPlayButton!!.setIcon(mPauseDrawable)
-//                    }
-//                }
-//            }
-//        }
-
-        viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
-            if (trackWrapper != null) {
-                mTrack = trackWrapper
-                nextTrack(trackWrapper)
-                mSeekBar.max = mTrack!!.track.duration_ms.toInt()
+                applyColors(it.thumbnail!!)
             }
         }
-        viewModel.nextTrack.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? -> }
 
-        viewModel.progress.observe(viewLifecycleOwner) { progress: Long ->
-            setProgress(progress)
-            setSeekBar(progress)
+        viewModel.progress.observe(viewLifecycleOwner) {
+            setProgress(it)
+            setSeekBar(it)
         }
     }
 
-    private fun nextTrack(wrappedTrack: TrackWrapper) {
-        val track = wrappedTrack.track
-        val bitmap = wrappedTrack.thumbnail
-
+    private fun applyColors(bitmap: Bitmap) {
         val colorSet = create(bitmap)
 
-        val trackName = SpannableString(track.name + " " + track.artists[0].name)
-        val albumTabTitle = SpannableString("From " + track.album.name)
-
-        val primaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.primary, colorSet.primary)
+        val primaryAnimator = ValueAnimator.ofObject(
+            ArgbEvaluator(),
+            this.colorSet.primary, colorSet.primary
+        )
         primaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        primaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.primary = animation.animatedValue as Int
 
-            trackName.setSpan(ForegroundColorSpan(mColorSet.primary),
-                0,
-                track.name.length,
-                Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+        primaryAnimator.addUpdateListener {
+            this.colorSet.primary = it.animatedValue as Int
 
-            mTrackNameView!!.text = trackName
+            trackNameView.setTextColor(this.colorSet.primary)
 
-            mPlayButton!!.iconTint = ColorStateList.valueOf(mColorSet.primary)
+            playButton.iconTint = ColorStateList.valueOf(this.colorSet.primary)
 
-            mSpotifyButton!!.setBackgroundColor(mColorSet.primary)
+            spotifyButton.setBackgroundColor(this.colorSet.primary)
 
-            mSeekBar!!.progressTintList = ColorStateList.valueOf(mColorSet.primary)
-            mSeekBar!!.thumbTintList = ColorStateList.valueOf(mColorSet.primary)
+            seekBar.progressTintList = ColorStateList.valueOf(this.colorSet.primary)
+            seekBar.thumbTintList = ColorStateList.valueOf(this.colorSet.primary)
         }
 
         primaryAnimator.start()
 
         val onPrimaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.text, colorSet.text)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.text, colorSet.text)
+
         onPrimaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        onPrimaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.text = animation.animatedValue as Int
-            mSpotifyButton!!.setTextColor(mColorSet.text)
+
+        onPrimaryAnimator.addUpdateListener {
+            this.colorSet.text = it.animatedValue as Int
+            spotifyButton.setTextColor(this.colorSet.text)
         }
+
         onPrimaryAnimator.start()
+
         val secondaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.secondary, colorSet.secondary)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.secondary, colorSet.secondary)
+
         secondaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        secondaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.secondary = animation.animatedValue as Int
-            trackName.setSpan(ForegroundColorSpan(mColorSet.secondary),
-                track.name.length + 1,
-                trackName.length,
-                Spanned.SPAN_INCLUSIVE_INCLUSIVE)
-            mTrackNameView!!.text = trackName
+
+        secondaryAnimator.addUpdateListener {
+            this.colorSet.secondary = it.animatedValue as Int
+
+            artistsView.setTextColor(this.colorSet.secondary)
+
         }
+
         secondaryAnimator.start()
+
         val tertiaryAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.tertiary, colorSet.tertiary)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.tertiary, colorSet.tertiary)
+
         tertiaryAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        tertiaryAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.tertiary = animation.animatedValue as Int
-            mSeekBar!!.progressBackgroundTintList = ColorStateList.valueOf(mColorSet.tertiary)
-            mProgressView!!.setTextColor(mColorSet.tertiary)
-            mDurationView!!.setTextColor(mColorSet.tertiary)
+
+        tertiaryAnimator.addUpdateListener {
+            this.colorSet.tertiary = it.animatedValue as Int
+
+            seekBar.progressBackgroundTintList = ColorStateList.valueOf(this.colorSet.tertiary)
+
+            progressView.setTextColor(this.colorSet.tertiary)
+
+            durationView.setTextColor(this.colorSet.tertiary)
         }
+
         tertiaryAnimator.start()
+
         val rippleAnimator =
-            ValueAnimator.ofObject(ArgbEvaluator(), mColorSet.ripple, colorSet.ripple)
+            ValueAnimator.ofObject(ArgbEvaluator(), this.colorSet.ripple, colorSet.ripple)
+
         rippleAnimator.duration =
             resources.getInteger(android.R.integer.config_shortAnimTime).toLong()
-        rippleAnimator.addUpdateListener { animation: ValueAnimator ->
-            mColorSet.ripple = animation.animatedValue as Int
-            mPlayButton!!.rippleColor = ColorStateList.valueOf(mColorSet.ripple)
+
+        rippleAnimator.addUpdateListener {
+            this.colorSet.ripple = it.animatedValue as Int
+
+            playButton.rippleColor = ColorStateList.valueOf(this.colorSet.ripple)
         }
+
         rippleAnimator.start()
+
+        this.colorSet = colorSet
+    }
+
+    private fun applyTrackDuration(track: Track) {
         val progressString = TimeString.Builder(0)
             .minutes()
             .separator(":")
             .seconds("%02d")
             .build()
             .toString()
+
         val durationString = TimeString.Builder(track.duration_ms)
             .minutes()
             .separator(":")
             .seconds("%02d")
             .build()
             .toString()
-        mProgressView!!.text = progressString
-        mDurationView!!.text = durationString
-        mColorSet = colorSet
+
+        progressView.text = progressString
+
+        durationView.text = durationString
+
+        seekBar.max = track.duration_ms.toInt()
     }
 
-    fun setProgress(progress: Long) {
+    private fun setProgress(progress: Long) {
         val progressString = TimeString.Builder(progress)
             .minutes()
             .separator(":")
             .seconds("%02d")
             .build()
             .toString()
-        mProgressView!!.text = progressString
+        progressView.text = progressString
     }
 
-    fun setSeekBar(progress: Long) {
-        mSeekBar!!.setProgress(progress.toInt(), true)
+    private fun setSeekBar(progress: Long) {
+        seekBar.setProgress(progress.toInt(), true)
     }
 }

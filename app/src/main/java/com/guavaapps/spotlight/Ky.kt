@@ -3,6 +3,10 @@ package com.guavaapps.spotlight
 import android.app.Application
 import io.realm.Realm
 import io.realm.RealmConfiguration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 private const val APP = "spotlight-gnmnp"
 private const val APP_NAME = "Spotlight"
@@ -13,39 +17,35 @@ class Ky : Application() {
     lateinit var modelRepository: ModelRepository
         private set
 
-    lateinit var userRepository: UserRepository
-        private set
-
-    lateinit var localRealm: Realm
-        private set
-
     lateinit var matcha: Matcha
+
+    lateinit var realm: Realm
 
     override fun onCreate() {
         super.onCreate()
 
         Realm.init(applicationContext)
 
-        val config = RealmConfiguration.Builder()
+        val realmConfig = RealmConfiguration.Builder()
             .name("Spotlight")
             .allowQueriesOnUiThread(true)
             .allowWritesOnUiThread(true)
             .deleteRealmIfMigrationNeeded()
             .build()
 
-        localRealm = Realm.getInstance(config)
+        runBlocking(Dispatchers.IO) {
+            // init on io thread
+            realm = Realm.getInstance(realmConfig)
+        }
+
         matcha = Matcha.init(applicationContext, APP, APP_NAME)
 
         val modelProvider = ModelProvider()
 
         modelRepository = ModelRepository(
             matcha,
-            localRealm,
+            realm,
             modelProvider
-        )
-
-        userRepository = UserRepository(
-            matcha
         )
     }
 
@@ -54,6 +54,6 @@ class Ky : Application() {
 
         modelRepository.close()
         matcha.logout()
-        localRealm.close()
+        realm.close()
     }
 }

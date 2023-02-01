@@ -1,38 +1,42 @@
 package com.guavaapps.spotlight
 
 import android.animation.Animator
-import com.guavaapps.components.Components.getPx
-import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.ViewGroup
-import android.view.View.OnLayoutChangeListener
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.constraintlayout.widget.ConstraintLayout
-import android.graphics.drawable.ColorDrawable
-import android.animation.ValueAnimator
-import android.view.MotionEvent
-import android.animation.ValueAnimator.AnimatorUpdateListener
 import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.animation.ValueAnimator.AnimatorUpdateListener
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
+import android.view.View.OnLayoutChangeListener
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.graphics.Insets
-import androidx.core.view.doOnLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.activityViewModels
-import java.lang.Exception
+import com.guavaapps.components.Components.getPx
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import androidx.fragment.app.FragmentContainerView as FragmentContainerView
 
 class TrackFragment : Fragment(R.layout.fragment_track) {
     private val viewModel: ContentViewModel by activityViewModels { ContentViewModel.Factory }
 
     private var insets: Insets? = null
+
+    var isTouchEnabled: Boolean = true
+        set(value) {
+            if (value) trackView.setOnTouchListener(trackViewOnTouchListener)
+            else trackView.setOnTouchListener(null)
+
+            field = value
+        }
 
     private lateinit var trackLargeContainer: FragmentContainerView
     private lateinit var trackSmallContainer: FragmentContainerView
@@ -146,6 +150,7 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
         viewModel.user.observe(viewLifecycleOwner) { userWrapper -> }
 
         viewModel.track.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
+            Log.e(TAG, "trackWrapper - $trackWrapper")
             if (trackWrapper != null) {
                 trackView.setImageBitmap(trackWrapper.thumbnail)
                 hasTrack = true
@@ -162,11 +167,15 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
 
         viewModel.nextTrack.observe(viewLifecycleOwner) { trackWrapper: TrackWrapper? ->
             if (trackWrapper != null) {
+                trackViewOnTouchListener?.unlock()
+
                 nextTrackView.setImageBitmap(trackWrapper.thumbnail)
             } else {
                 val drawable = ColorDrawable()
                 drawable.color = Color.TRANSPARENT
                 nextTrackView.setImageDrawable(drawable)
+
+                trackViewOnTouchListener?.lock()
             }
         }
     }
@@ -229,14 +238,29 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
     }
 
     fun resize(offset: Float) {
-        if (offset == 0f) nextTrackView.visibility = View.VISIBLE
-        else nextTrackView.visibility = View.GONE
+        if (offset == 0f) {
+            isTouchEnabled = true
+            nextTrackView.visibility = View.VISIBLE
+        } else {
+            isTouchEnabled = false
+            nextTrackView.visibility = View.GONE
+        }
+
+        // how do i make it better\
+        // you already do
+        // how do i make it good
+        //it will be better layoutInflatercuddles iblove layoutInflater
+        // i love you more nop yep
 
         resizeX(offset)
         resizeY(offset)
         resizeScale(offset)
         alphaSmall(offset)
         alphaLarge(offset)
+
+        trackView.post {
+            trackView.requestLayout()
+        }
     }
 
     // TODO DONT TOUCH AT ALL COSTS THIS TOOK SOME MUCH TIME TO DO
@@ -358,18 +382,22 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
                 playlistView!!.x = mPx
             }
             if (event.action == MotionEvent.ACTION_UP) {
-//                mParent.setUserInputEnabled (true);
                 v.parent.requestDisallowInterceptTouchEvent(false)
                 reset(v)
                 resize(v, 1f)
                 if (hasTrack) {
                     if (event.rawX + mDx + v.width / 2 >= mPeekBound) {
                         deflateTrack()
-                        inflateNext()
+                        inflateNextAndRun {
+                            viewModel.add()
+                        }
+
                     }
                     if (event.rawX + mDx + v.width / 2 <= mDismissBound) {
                         deflateTrack()
-                        inflateNext()
+                        inflateNextAndRun {
+                            viewModel.reject()
+                        }
                     }
                 }
             }
@@ -435,6 +463,10 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
         }
 
         private fun inflateNext() {
+            inflateNextAndRun {}
+        }
+
+        private fun inflateNextAndRun(block: () -> Unit) {
             nextTrackView.animate().alpha(1f)
                 .setDuration(resources.getInteger(android.R.integer.config_shortAnimTime).toLong())
                 .start()
@@ -453,13 +485,15 @@ class TrackFragment : Fragment(R.layout.fragment_track) {
                     super.onAnimationEnd(animation)
                     val newX = view!!.width / 2 - trackView!!.width / 2
                     val newY = view!!.height / 2 - trackView!!.height / 2
-                    viewModel.getNext()
+//                    viewModel.getNext()
                     trackView!!.x = newX.toFloat()
                     trackView!!.y = newY.toFloat()
                     if (viewModel.nextTrack.value != null) {
                         trackView!!.scaleX = 1f
                         trackView!!.scaleY = 1f
                         trackView!!.alpha = 1f
+
+                        block()
                     } else blankAnim()
                 }
             })

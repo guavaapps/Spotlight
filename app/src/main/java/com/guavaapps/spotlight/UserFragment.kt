@@ -12,18 +12,22 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewGroup.MarginLayoutParams
+import android.view.ViewGroup.*
 import android.view.ViewTreeObserver.OnGlobalLayoutListener
-import android.view.Window
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.Insets
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.*
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.*
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.fragment.findNavController
+import androidx.transition.TransitionManager
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.shape.ShapeAppearanceModel
 import com.google.android.material.transition.*
 import com.guavaapps.components.Components.getPx
 import com.guavaapps.components.Components.getPxF
@@ -45,13 +49,17 @@ class UserFragment : Fragment(R.layout.fragment_user) {
     private lateinit var userNameView: TextView
     private lateinit var userIdView: TextView
     private lateinit var spotifyButton: MaterialButton
+    private lateinit var manageAccountButton: MaterialButton
+    private lateinit var signOutAccountButton: MaterialButton
+    private lateinit var deleteAccountButton: MaterialButton
+    private lateinit var cancelButton: MaterialButton
+
+    private lateinit var addPlaylistFragment: MaterialCardView
 
     // playlists
     private lateinit var listView: ListView
     private val views: MutableList<View> = mutableListOf()
     private var selectedView: View? = null
-
-    private val addButton: MaterialButton by lazy { PlaylistView.createAddButton(requireContext()) {} }
 
     // animators
     private var viewAnimator: ValueAnimator? = null
@@ -68,31 +76,14 @@ class UserFragment : Fragment(R.layout.fragment_user) {
                 .toLong()
 
         val transform = MaterialContainerTransform().apply {
-//            interpolator = AnticipateOvershootInterpolator(0.5f)
             drawingViewId = R.id.fragment_container_view
             duration = animDuration
-//            fadeMode = MaterialContainerTransform.FADE_MODE_CROSS
             scrimColor = Color.TRANSPARENT
             containerColor = Color.TRANSPARENT
             startContainerColor = Color.TRANSPARENT
             endContainerColor = Color.TRANSPARENT
         }
 
-//        transform.interpolator = AnticipateOvershootInterpolator(0.5f)
-//        transform.drawingViewId = R.id.fragment_container_view
-//        transform.duration = 5000
-//        resources.getInteger(com.google.android.material.R.integer.material_motion_duration_long_2)
-//                .toLong()
-//
-//        transform.fadeMode = MaterialContainerTransform.FADE_MODE_THROUGH
-//
-//        transform.scrimColor = Color.TRANSPARENT
-//        transform.setAllContainerColors(Color.TRANSPARENT)
-//        val model = ShapeAppearanceModel.builder()
-//            .setAllCornerSizes(getPx(requireContext(), 32).toFloat())
-//            .build()
-//        transform.startShapeAppearanceModel = model
-//        transform.endShapeAppearanceModel = model
         sharedElementEnterTransition = transform
 
         enterTransition = MaterialFade().apply {
@@ -117,36 +108,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         postponeEnterTransition()
         view.doOnPreDraw { startPostponedEnterTransition() }
 
-//        sharedElementEnterTransition = MaterialContainerTransform().apply {
-//            // Manually add the Views to be shared since this is not a standard Fragment to
-//            // Fragment shared element transition.
-//            startView = parentFragment?.requireView()?.findViewById(R.id.user)
-//            endView = view//.findViewById(R.id.user)
-//            duration = 5000//resources.getInteger(R.integer.reply_motion_duration_large).toLong()
-//            scrimColor = Color.TRANSPARENT
-//            containerColor = Color.TRANSPARENT
-//            fadeMode = MaterialContainerTransform.FADE_MODE_THROUGH
-//            startContainerColor = Color.TRANSPARENT
-//            endContainerColor = Color.TRANSPARENT
-//        }
-//
-//        returnTransition = MaterialContainerTransform().apply {
-//            // Manually add the Views to be shared since this is not a standard Fragment to
-//            // Fragment shared element transition.
-//            startView = view//view.findViewById(R.id.user)
-//            endView = parentFragment?.requireView()?.findViewById(R.id.user)
-//            duration = 5000//resources.getInteger(R.integer.reply_motion_duration_large).toLong()
-//            scrimColor = Color.TRANSPARENT
-//            containerColor = Color.TRANSPARENT
-//            fadeMode = MaterialContainerTransform.FADE_MODE_THROUGH
-//            startContainerColor = Color.TRANSPARENT
-//            endContainerColor = Color.TRANSPARENT
-//            addTarget(view)
-//        }
-
-        // this fragment always uses a light theme
-        // make status bar contrast with the background
-        with (requireActivity().window) {
+        with(requireActivity().window) {
             WindowCompat.getInsetsController(this, decorView).let {
                 // true for light theme i.e. dark status bar
                 it.isAppearanceLightStatusBars = true
@@ -164,6 +126,7 @@ class UserFragment : Fragment(R.layout.fragment_user) {
                 navController.navigateUp()
             }
         }
+
         requireActivity().onBackPressedDispatcher
             .addCallback(viewLifecycleOwner, callback)
 
@@ -173,11 +136,122 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         userNameView = view.findViewById(R.id.user_name)
         userIdView = view.findViewById(R.id.user_id)
         spotifyButton = view.findViewById(R.id.spotify)
+        manageAccountButton = view.findViewById(R.id.manage_account)
+        signOutAccountButton = view.findViewById(R.id.sign_out)
+        deleteAccountButton = view.findViewById(R.id.delete_account)
+        cancelButton = view.findViewById(R.id.cancel)
 
         listView = view.findViewById(R.id.list_view)
         listView.canScroll = false
 
-        listView.setOnScrollChangeListener { view, _, _, _, _ ->
+        addPlaylistFragment = view.findViewById(R.id.add)
+
+        spotifyButton.apply {
+            doOnLayout {
+                val radius = height - insetTop - insetBottom
+
+//                shapeAppearanceModel = ShapeAppearanceModel.builder(
+//                    requireContext(),
+//                    R.style.ButtonGroupCenter,
+//                    0)
+//                    .setTopLeftCornerSize(radius / 2f)
+//                    .setBottomLeftCornerSize(radius / 2f)
+//                    .build()
+            }
+        }
+
+        manageAccountButton.apply {
+            doOnLayout {
+                val radius = height - insetTop - insetBottom
+
+                shapeAppearanceModel = ShapeAppearanceModel.builder(
+                    requireContext(),
+                    R.style.ButtonGroupCenter,
+                    0)
+                    .setTopRightCornerSize(radius / 2f)
+                    .setBottomRightCornerSize(radius / 2f)
+                    .build()
+            }
+        }
+
+        signOutAccountButton.apply {
+            doOnLayout {
+                val radius = height - insetTop - insetBottom
+
+                shapeAppearanceModel = ShapeAppearanceModel.builder(
+                    requireContext(),
+                    R.style.ButtonGroupCenter,
+                    0)
+                    .setTopLeftCornerSize(radius / 2f)
+                    .setTopRightCornerSize(radius / 2f)
+                    .build()
+            }
+        }
+
+        deleteAccountButton.apply {
+            doOnLayout {
+                val radius = height - insetTop - insetBottom
+
+                shapeAppearanceModel = ShapeAppearanceModel.builder(
+                    requireContext(),
+                    R.style.ButtonGroupCenter,
+                    0)
+//                    .setAllCornerSizes(getPxF(requireContext(), 12))
+                    .build()
+            }
+        }
+
+//        addPlaylistFragment.elevation = getPxF(requireContext(), 4)
+        addPlaylistFragment.apply {
+            doOnLayout {
+                val button = signOutAccountButton
+
+                val radius = button.height - button.insetTop - button.insetBottom
+
+                Log.e(TAG, "radius ------ $radius")
+
+                shapeAppearanceModel = ShapeAppearanceModel.builder(
+                    requireContext(),
+                    R.style.ButtonGroupCenter,
+                    R.style.ButtonGroupCenter)
+                    .setAllCornerSizes(radius / 2f)
+                    .build()
+
+                addPlaylistFragment.radius = radius / 2f
+            }
+        }
+
+        cancelButton.apply {
+            doOnLayout {
+                val radius = height - insetTop - insetBottom
+
+                shapeAppearanceModel = ShapeAppearanceModel.builder(
+                    requireContext(),
+                    R.style.ButtonGroupCenter,
+                    0)
+                    .setBottomLeftCornerSize(radius / 2f)
+                    .setBottomRightCornerSize(radius / 2f)
+                    .build()
+            }
+        }
+
+        manageAccountButton.setOnClickListener {
+            showAlertDialog(it)
+        }
+
+        signOutAccountButton.setOnClickListener {
+            hideAlertDialog(manageAccountButton)
+        }
+
+        deleteAccountButton.setOnClickListener {
+            hideAlertDialog(manageAccountButton)
+        }
+
+        cancelButton.setOnClickListener {
+            hideAlertDialog(manageAccountButton)
+        }
+
+        listView.setOnScrollChangeListener { _, _, _, _, _ ->
             val scrollY = listView.computeVerticalScrollOffset()
 
             val MAX = getPxF(requireContext(), 24)
@@ -210,28 +284,38 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         })
 
         viewModel.playlists.observe(viewLifecycleOwner) {
-
             Log.e(TAG, "playlists - ${it.size}")
+
             views.clear()
             listView.clear()
+
+            val drawable =
+                ResourcesCompat.getDrawable(resources,
+                    R.drawable.ic_playlist_48,
+                    requireContext().theme)!!.mutate()
+            drawable.setTint(colorSet.text)
+
+            val it = it.map {
+                if (it.thumbnail == null) {
+                    Log.e(TAG, "--------- aaaaaaaaaa----------")
+                    it.thumbnail = drawable.toBitmap(640, 640, Bitmap.Config.ARGB_8888)
+                }
+
+                it
+            }
 
             views.addAll(PlaylistView.createAll(requireContext(), it) { view, playlist ->
                 selectView(selectedView, view)
                 selectedView = view
+
+                viewModel.setMainPlaylist(playlist.playlist?.id)
             })
 
             listView.add(listOf(
                 *views.toTypedArray(),
-                addButton
             ))
 
-            addButton.insetBottom = ViewCompat.getRootWindowInsets(view)
-                ?.getInsets(WindowInsetsCompat.Type.systemBars())
-                ?.bottom ?: 0
-
             applyColorsToPlaylistListView(viewModel.user.value?.bitmap!!)
-
-            //selectView(null, views.first())
         }
 
         viewModel.playlist.observe(viewLifecycleOwner) {
@@ -267,8 +351,6 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             }
             applyColorSet(userWrapper.bitmap!!)
         }
-
-        //viewModel.getPlaylists()
     }
 
     private fun applyColorSet(bitmap: Bitmap) {
@@ -276,9 +358,15 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 
         requireView().setBackgroundColor(colorSet.primary)
 
+        addPlaylistFragment.setBackgroundColor(colorSet.primary)
+
         userNameView.setTextColor(colorSet.text)
         userIdView.setTextColor(colorSet.text)
         spotifyButton.setBackgroundColor(colorSet.color40)
+        manageAccountButton.setBackgroundColor(colorSet.color40)
+        signOutAccountButton.setBackgroundColor(colorSet.color40)
+        deleteAccountButton.setBackgroundColor(colorSet.color40)
+        cancelButton.setBackgroundColor(colorSet.color40)
 
         val buttonTextColor = with(Hct.fromInt(colorSet.primary)) {
             tone = 100f
@@ -286,8 +374,16 @@ class UserFragment : Fragment(R.layout.fragment_user) {
         }
 
         spotifyButton.setTextColor(buttonTextColor)
+        manageAccountButton.setTextColor(buttonTextColor)
+        signOutAccountButton.setTextColor(buttonTextColor)
+        deleteAccountButton.setTextColor(buttonTextColor)
+        cancelButton.setTextColor(buttonTextColor)
 
         spotifyButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+        manageAccountButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+        signOutAccountButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+        deleteAccountButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
+        cancelButton.rippleColor = ColorStateList.valueOf(colorSet.ripple)
 
         this.colorSet = colorSet
     }
@@ -300,15 +396,6 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             it.findViewById<TextView>(R.id.name).setTextColor(colorSet.text)
         }
 
-        val t = with(Hct.fromInt(colorSet.primary)) {
-            tone = 100f
-            toInt()
-        }
-
-//        views.firstOrNull()?.setBackgroundColor(colorSet.color40)
-//        views.firstOrNull()?.elevation = getPxF(requireContext(), 2)
-//        views.firstOrNull()?.findViewById<TextView>(R.id.name)
-//            ?.setTextColor(t)
     }
 
     private fun selectView(prev: View?, view: View) {
@@ -362,8 +449,6 @@ class UserFragment : Fragment(R.layout.fragment_user) {
             toInt()
         }
 
-//        view.setBackgroundColor(end)
-
         viewAnimator = ValueAnimator.ofObject(ArgbEvaluator(), start, end)
         with(viewAnimator!!) {
             duration = 150
@@ -383,6 +468,40 @@ class UserFragment : Fragment(R.layout.fragment_user) {
 
             start()
         }
+    }
+
+    private fun showAlertDialog(view: View) {
+        val t = MaterialContainerTransform().apply { // TODO create exit trans
+            startView = view
+            endView = addPlaylistFragment
+            duration = 750
+            scrimColor = Color.TRANSPARENT
+//            startShapeAppearanceModel = (view as Shapeable).shapeAppearanceModel
+//            endShapeAppearanceModel = addPlaylistFragment.shapeAppearanceModel
+            addTarget(addPlaylistFragment)
+        }
+
+        view.visibility = INVISIBLE
+        addPlaylistFragment.visibility = VISIBLE
+
+        TransitionManager.beginDelayedTransition(content, t)
+    }
+
+    private fun hideAlertDialog(view: View) {
+        val t = MaterialContainerTransform().apply { // TODO create exit trans
+            startView = addPlaylistFragment
+            endView = view
+            duration = 350
+            scrimColor = Color.TRANSPARENT
+//            startShapeAppearanceModel = addPlaylistFragment.shapeAppearanceModel
+//            endShapeAppearanceModel = (view as Shapeable).shapeAppearanceModel
+
+            addTarget(view)
+        }
+
+        view.visibility = VISIBLE
+        addPlaylistFragment.visibility = INVISIBLE
+        TransitionManager.beginDelayedTransition(content, t)
     }
 
     companion object {

@@ -2,44 +2,24 @@ package com.guavaapps.spotlight
 
 import android.content.Context
 import android.util.Log
-import com.guavaapps.spotlight.Matcha.Companion.asMatchaObject
-import com.guavaapps.spotlight.Matcha.Companion.fromMatchaObject
-import com.guavaapps.spotlight.realm.RealmTrack
-import com.pixel.spotifyapi.Objects.Track
+import com.guavaapps.spotlight.Matcha.Companion.asDocument
+import com.guavaapps.spotlight.Matcha.Companion.asObject
 import io.realm.*
 import io.realm.annotations.Ignore
 import io.realm.annotations.RealmClass
 import io.realm.annotations.RealmField
 import io.realm.mongodb.*
+import io.realm.mongodb.App
 import io.realm.mongodb.mongo.MongoClient
 import io.realm.mongodb.mongo.MongoCollection
 import io.realm.mongodb.mongo.MongoDatabase
 import io.realm.mongodb.mongo.options.FindOneAndModifyOptions
 import org.bson.Document
-import java.lang.annotation.Inherited
-import java.lang.annotation.Retention
-import java.lang.annotation.RetentionPolicy
 import java.lang.reflect.ParameterizedType
 import java.util.*
-import kotlin.reflect.KClass
 
 private const val TAG = "Matcha"
 private const val MONGODB_ATLAS = "mongodb-atlas"
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(AnnotationTarget.CLASS)
-@Inherited
-annotation class MatchaClass(val name: String = "")
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(AnnotationTarget.CLASS, AnnotationTarget.LOCAL_VARIABLE, AnnotationTarget.TYPEALIAS)
-@Inherited
-annotation class MatchWith(val classes: Array<KClass<*>> = [])
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(AnnotationTarget.CLASS, AnnotationTarget.LOCAL_VARIABLE, AnnotationTarget.TYPEALIAS)
-@Inherited
-annotation class UseEmbeddedKey(val fieldName: String)
 
 class Match<E : RealmObject>(
     private val collection: MongoCollection<Document>,
@@ -57,13 +37,13 @@ class Match<E : RealmObject>(
     fun findFirst(): E? {
         val obj = collection.findOne(filter).get()
 
-        return obj?.asMatchaObject(clazz)
+        return obj?.asObject(clazz)
     }
 
     fun findFirstAsync(onResult: (E) -> Unit) {
         collection.findOne(filter).getAsync {
             if (it.isSuccess) {
-                onResult(it.get().asMatchaObject(clazz) as E)
+                onResult(it.get().asObject(clazz) as E)
             }
         }
     }
@@ -75,7 +55,7 @@ class Match<E : RealmObject>(
             .iterator()
             .get()
             .forEach {
-                objects.add(it.asMatchaObject(clazz) as E)
+                objects.add(it.asObject(clazz) as E)
             }
 
         return objects
@@ -89,7 +69,7 @@ class Match<E : RealmObject>(
             .getAsync {
                 if (it.isSuccess) {
                     while (it.get().hasNext()) {
-                        objects.add(it.get().next().asMatchaObject(clazz) as E)
+                        objects.add(it.get().next().asObject(clazz) as E)
                     }
 
                     onResult(objects)
@@ -99,13 +79,13 @@ class Match<E : RealmObject>(
     }
 
     fun update(obj: E) {
-        val document = obj.fromMatchaObject()
+        val document = obj.asDocument()
 
         collection.updateOne(filter, document).get()
     }
 
     fun insert(obj: E) {
-        val document = obj.fromMatchaObject()
+        val document = obj.asDocument()
 
         Log.e(TAG, "[INSERT] ${document.toJson()}")
 
@@ -116,13 +96,13 @@ class Match<E : RealmObject>(
     }
 
     fun insertAll(vararg obj: E) {
-        val documents = obj.map { it.fromMatchaObject() }
+        val documents = obj.map { it.asDocument() }
 
         collection.insertMany(documents)
     }
 
     fun upsert(obj: E) {
-        val document = obj.fromMatchaObject()
+        val document = obj.asDocument()
 
         val options = FindOneAndModifyOptions().apply {
             upsert(true)
@@ -166,7 +146,7 @@ class Match<E : RealmObject>(
                     return@get
                 }
 
-                result(d.get().fullDocument?.asMatchaObject(clazz) as E)
+                result(d.get().fullDocument?.asObject(clazz) as E)
             } else {
                 Log.e(TAG, "watcher error - ${d.error.message}")
             }
@@ -189,14 +169,14 @@ class Matcha(
         private set
 
     init {
-        Realm.init(context)//clicky clack clack cliciki  i click tap love cilimy tzp you
+        Realm.init(context)
 
         app = App(config)
     }
 
     fun login(credentials: Credentials) {
         user = app.login(credentials)
-        client = user.getMongoClient("mongodb-atlas")
+        client = user.getMongoClient(MONGODB_ATLAS)
         mongoDatabase = client.getDatabase(database)
     }
 
@@ -204,14 +184,17 @@ class Matcha(
         app.currentUser()?.logOut()
     }
 
+    // initiate query for that match objects of the given class
     fun <E : RealmObject> where(clazz: Class<E>): Match<E> {
-        val name =
-            clazz.getAnnotation(RealmClass::class.java)
-                ?.value
-                ?.ifEmpty { clazz.simpleName }
+        // use class name as collection name or the explicit specified
+        // collection name if one was provided by annotating the class
+        val name = clazz.getAnnotation(RealmClass::class.java)
+            ?.value
+            ?.ifEmpty { clazz.simpleName }
 
         val collection = mongoDatabase.getCollection(name)
 
+        // return a match with an empty filter
         return Match(collection, clazz)
     }
 
@@ -220,19 +203,16 @@ class Matcha(
             context: Context,
             app: String,
             database: String,
-        ): Matcha {
-            val matcha = Matcha(
-                context,
-                AppConfiguration.Builder(app)
-                    .build(),
-                database
-            )
+        ) = Matcha(
+            context,
+            AppConfiguration.Builder(app)
+                .build(),
+            database
+        )
 
-            return matcha
-        }
-
-        // TODO rename asObject
-        fun <E> Document.asMatchaObject(clazz: Class<E>): E {
+        // convert bson doc to a java object by matching the doc's field name with
+        // the object's field names
+        fun <E> Document.asObject(clazz: Class<E>): E {
             val obj = clazz.newInstance() as E
 
             clazz.declaredFields.forEach {
@@ -252,11 +232,10 @@ class Matcha(
                             if (it != null) {
                                 val valueClass = it::class.java
 
-                                val methodName =
-                                    if (fieldClass.simpleName == "Integer") "int" else fieldClass.simpleName.lowercase()
+                                val methodName = if (fieldClass.simpleName == "Integer") "int"
+                                else fieldClass.simpleName.lowercase()
 
-                                val converter =
-                                    valueClass.getMethod("${methodName}Value")
+                                val converter = valueClass.getMethod("${methodName}Value")
 
                                 val convertedValue = converter.invoke(it)
 
@@ -269,20 +248,20 @@ class Matcha(
                         it.set(obj, RealmList(*objects.toTypedArray()))
                     } else {
                         val objects = this.getList(fieldName, Document::class.java)
-                            .map { o: Document -> o.asMatchaObject(fieldClass) }
+                            .map { o: Document -> o.asObject(fieldClass) }
 
                         it.set(obj, RealmList(*objects.toTypedArray()))
                     }
                 } else {
-                    it.set(obj, this.get(fieldName, Document::class.java).asMatchaObject(it.type))
+                    it.set(obj, this.get(fieldName, Document::class.java).asObject(it.type))
                 }
             }
 
             return obj
         }
 
-        // TODO rename asDocument
-        fun Any.fromMatchaObject(): Document {
+        // opposite of Any.asObject()
+        fun Any.asDocument(): Document {
             val clazz = this::class.java
             val obj = Document()
 
@@ -304,11 +283,11 @@ class Matcha(
                         val objects = (v as List<*>)
                         obj[fieldName] = objects
                     } else {
-                        val objects = (v as List<*>).map { it?.fromMatchaObject() }
+                        val objects = (v as List<*>).map { it?.asDocument() }
                         obj[fieldName] = objects
                     }
                 } else {
-                    it.set(obj, v?.fromMatchaObject())
+                    it.set(obj, v?.asDocument())
                 }
             }
 
@@ -469,23 +448,35 @@ class Matcha(
 val Class<*>.allFields
     get() = setOf(*this.fields, *this.declaredFields)
 
+// check if a given class is a bson primitive type, primitive if class is:
+// if it.isPrimitive() is true,
+// is boolean, string, kotlin.Number or java.util.Date
 private fun isPrimitive(clazz: Class<*>) =
     clazz.isPrimitive || Boolean::class.java.isAssignableFrom(clazz) || Date::class.java.isAssignableFrom(
         clazz) || Number::class.java.isAssignableFrom(
         clazz) || String::class.java.isAssignableFrom(clazz)
 
-fun resolveRealmObject(clazz: Class<*>): Class<*> {
+// get the corresponding realm clazz for the given Spotify object class
+// e.g. Track -> RealmTrack, Artist -> RealmArtist
+private fun resolveRealmObject(clazz: Class<*>): Class<*> {
+    // RealmObjectRealmProxy classes inherit the realm object
+    // autogenerated in io.realm.[class name]
+    // treat as superclass (RealmObject)
     val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
 
+    // is a realm object was passed return it
     return if (RealmObject::class.java.isAssignableFrom(clazz)) clazz
+
+    // if the class is an item pager (Pager<ItemClass>) determine what type of pager it is
+    // since realm doesn't support generic class params use item-specific realm pagers
+    // only Pager<TrackSimple> (RealmTrackSimplePager) and Pager<PlaylistTrack> (RealmPlaylistTrackPager) are ever used
     else if (clazz.simpleName == "Pager") {
         val t = if (clazz.enclosingClass.simpleName == "RealmAlbum") {
             "TrackSimple"
         } else {
             "PlaylistTrack"
         }
-//        val type = (clazz.genericSuperclass as ParameterizedType?)?.actualTypeArguments?.first()
-//        Log.e(TAG, "pager of type - ${type?.typeName}")
+
         Class.forName("com.guavaapps.spotlight.realm.Realm${t}${clazz.simpleName}")
     } else {
         Class.forName("com.guavaapps.spotlight.realm.Realm${clazz.simpleName}")
@@ -493,7 +484,8 @@ fun resolveRealmObject(clazz: Class<*>): Class<*> {
     }
 }
 
-fun resolveSpotifyObject(clazz: Class<*>): Class<*> {
+// opposite of resolveRealmObject()
+private fun resolveSpotifyObject(clazz: Class<*>): Class<*> {
     val clazz = if (clazz.packageName == "io.realm") clazz.superclass else clazz
 
     return Class.forName("com.pixel.spotifyapi.Objects.${clazz.simpleName.removePrefix("Realm")}")

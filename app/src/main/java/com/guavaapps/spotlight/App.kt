@@ -4,16 +4,15 @@ import android.app.Application
 import io.realm.Realm
 import io.realm.RealmConfiguration
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 
 private const val APP = "spotlight-gnmnp"
 private const val APP_NAME = "Spotlight"
 
-private const val TAG = "Ky"
+private const val TAG = "App"
 
-class Ky : Application() {
+// top level application class containing all the data providers
+class App : Application() {
     lateinit var modelRepository: ModelRepository
         private set
 

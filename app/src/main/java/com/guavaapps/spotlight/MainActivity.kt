@@ -44,7 +44,7 @@ private val SCOPES = arrayOf(
 )
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var app: Ky
+    private lateinit var app: App
 
     private val viewModel: ContentViewModel by viewModels { ContentViewModel.Factory }
 
@@ -112,7 +112,7 @@ class MainActivity : AppCompatActivity() {
         Log.i(TAG,
             "i love you sooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo much ")
 
-        app = application as Ky
+        app = application as App
 
         Ducky.quack(this)
 

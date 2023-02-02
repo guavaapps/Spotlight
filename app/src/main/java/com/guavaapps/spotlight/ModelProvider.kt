@@ -1,6 +1,5 @@
 package com.guavaapps.spotlight
 
-import android.hardware.GeomagneticField
 import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
@@ -11,6 +10,7 @@ import java.net.URL
 private const val TAG = "ModelProvider"
 
 class ModelProvider {
+    // aws lambda funciton url of the model optimiser
     private val FUN = "https://3ofwdrmnxc2t2jz2xneowmk5ji0nvrum.lambda-url.us-east-1.on.aws/"
 
     fun get(user: String): ModelWrapper {
@@ -41,7 +41,7 @@ class ModelProvider {
 
         val obj = Gson().fromJson(encoded, object {
             var statusCode: Int? = null
-            var optimised: Boolean? = null
+            var status: Int? = null
             var body = object {
                 var model: String? = null
                 var timestamp: Long? = null
@@ -83,7 +83,7 @@ class ModelProvider {
 
         val obj = Gson().fromJson(encoded, object {
             var statusCode: Int? = null
-            var optimised: Boolean? = null
+            var status: Int? = null
             var body = object {
                 var model: String? = null
                 var timestamp: Long? = null

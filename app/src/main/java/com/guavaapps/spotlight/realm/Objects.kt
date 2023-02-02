@@ -1,13 +1,12 @@
 package com.guavaapps.spotlight.realm
 
 import android.graphics.Bitmap
-import com.guavaapps.spotlight.MatchWith
-import com.pixel.spotifyapi.Objects.*
-import io.realm.*
+import io.realm.RealmDictionary
+import io.realm.RealmList
+import io.realm.RealmObject
 import io.realm.annotations.*
 import org.bson.types.ObjectId
 import java.nio.ByteBuffer
-import java.sql.Timestamp
 import java.util.*
 
 @RealmModule(classes = [AppUser::class, Model::class, TrackModel::class, ModelParam::class])
@@ -64,7 +63,6 @@ open class ModelParam(
     var shape: RealmList<Int> = RealmList(),
 ) : RealmObject() {}
 
-@MatchWith([UserPublic::class])
 open class RealmUserPublic(
     var display_name: String? = null,
     var external_urls: RealmDictionary<String>? = null,
@@ -78,7 +76,6 @@ open class RealmUserPublic(
 ) : RealmObject()
 
 
-@MatchWith([Playlist::class])
 open class RealmPlaylist(
     var collaborative: Boolean? = null,
     var external_urls: RealmDictionary<String>? = null,
@@ -106,7 +103,6 @@ open class RealmPlaylistTrack(
 ) : RealmObject()
 
 // spotify
-@MatchWith([Track::class])
 open class RealmTrack(
 ) : RealmObject() {
     @PrimaryKey
@@ -200,7 +196,6 @@ fun ky(realmBitmap: RealmBitmap) {
     )
 }
 
-@MatchWith([Album::class])
 open class RealmAlbum : RealmObject() {
     var album_type: String? = null
     var available_markets: RealmList<String>? = null

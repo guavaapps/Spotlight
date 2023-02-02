@@ -1,5 +1,6 @@
 package com.guavaapps.spotlight
 
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -213,8 +214,8 @@ class ContentViewModel(
 
         val topArtists = listOf(
             *spotifyService.getTopArtists(paramsShort).items.let {
-                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(3))
-                it.take(3).toTypedArray()
+                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(2))
+                it.take(2).toTypedArray()
             },
             *spotifyService.getTopArtists(paramsMedium).items.let {
                 topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(2))
@@ -227,7 +228,7 @@ class ContentViewModel(
         )
 
         val topTracks = listOf(
-            *spotifyService.getTopTracks(paramsShort).items.take(3).toTypedArray(),
+            *spotifyService.getTopTracks(paramsShort).items.take(2).toTypedArray(),
             *spotifyService.getTopTracks(paramsMedium).items.take(2).toTypedArray(),
             *spotifyService.getTopTracks(paramsLong).items.take(1).toTypedArray(),
         )
@@ -412,6 +413,12 @@ class ContentViewModel(
         // perform the requests
         val t = withContext(Dispatchers.IO) {
             requestObject.flatMap {
+                Log.e (TAG, it.toString())
+
+//                val it = mapOf(
+//                    "limit" to 100,
+//                    "seed_genres" to "hip-hop"
+//                )
                 spotifyService.getRecommendations(it).tracks
             }
         }.distinctBy { it.id }
@@ -655,7 +662,7 @@ class ContentViewModel(
                 modelClass: Class<T>,
                 extras: CreationExtras,
             ): T {
-                val app = extras[APPLICATION_KEY] as Ky
+                val app = extras[APPLICATION_KEY] as App
 
                 return ContentViewModel(
                     app.matcha,

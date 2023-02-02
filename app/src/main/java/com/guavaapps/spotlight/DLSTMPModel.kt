@@ -1,7 +1,5 @@
 package com.guavaapps.spotlight
 
-import android.util.Log
-import androidx.annotation.FloatRange
 import org.tensorflow.lite.Interpreter
 import java.io.File
 
@@ -10,7 +8,10 @@ private const val TAG = "DLSTMP"
 class DLSTMPModel(model: File) {
     private val LOOK_BACK = 1
 
+    // tensorflow lite model returned by the model optimiser
     private var interpreter: Interpreter
+
+    // input shape of the model in the form [batches, timesteps, features]
     val inputShape: IntArray
         get() = interpreter.getInputTensor(0).shape()
 
@@ -21,18 +22,15 @@ class DLSTMPModel(model: File) {
         interpreter = Interpreter(model)
     }
 
+    // get the next
     fun getNext(timeline: Array<FloatArray>): FloatArray {
         interpreter.allocateTensors()
-
-        val modelInputShape = interpreter.getInputTensor(0).shape().joinToString()
-        val inputShape = intArrayOf(timeline.size, timeline.first().size).joinToString()
-
-        Log.e(TAG, "input shape check - modelInputShape[$modelInputShape] inputShape=[$inputShape]")
 
         val output = arrayOf(
             FloatArray(timeline.first().size)
         )
 
+        // scale the timeline
         val scaledTimeline = FeatureScaler.scale(
             timeline
                 .takeLast(LOOK_BACK)
@@ -43,15 +41,6 @@ class DLSTMPModel(model: File) {
         interpreter.run(arrayOf(scaledTimeline), output)
 
         return FeatureScaler.invert(output).first()
-    }
-
-    private fun checkInputShape(interpreter: Interpreter, timeline: Array<FloatArray>) {
-        val inputShape =
-            interpreter.getInputTensor(0).shape().slice(1..1) // batch size (at index 0) is always 1
-
-        if (inputShape[0] != timeline.size || inputShape[1] != timeline.first().size) throw IllegalArgumentException(
-            "Timeline doesn't match required input shape - inputShape=[$inputShape] timeline=[${timeline.first().size}]"
-        )
     }
 }
 

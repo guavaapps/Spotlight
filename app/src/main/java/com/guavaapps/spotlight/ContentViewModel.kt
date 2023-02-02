@@ -282,8 +282,6 @@ class ContentViewModel(
         )
     }
 
-    //i love you so fucking much and  when i looked at you just now i thought my heart was gonna explode
-
     // ui
     fun getAlbum() = viewModelScope.launch {
         if (album.value?.album?.tracks != null) return@launch

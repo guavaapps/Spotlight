@@ -22,11 +22,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bson.Document
 import retrofit.RetrofitError
+import java.time.Instant
 import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import kotlin.collections.set
 
 private const val TAG = "ViewModel"
 
@@ -59,22 +59,33 @@ class ContentViewModel(
     // spotify
     private lateinit var spotifyService: SpotifyService
     private lateinit var spotifyAppRemote: AppRemote
+    // listens to the current playback position
     private var playerStateListener: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor()
 
     // internal
+    // current batch of tracks
     private val tracks: Queue<TrackWrapper?> = LinkedList()
+
+    // store internally before making it accessible to the ui
     private var albumInternal: AlbumWrapper? = null
     private var allArtists = mutableListOf<ArtistWrapper>()
     private var userPlaylists = mutableListOf<PlaylistSimple>()
 
     // local copy of the user's listening history
+    // all listening history
     private val localTimeline = mutableListOf<TrackModel>()
+    // current session history
+    private val sessionTimeline = mutableListOf<String>()
 
+    // all rejected tracks during the current session
     private val rejected = mutableListOf<String>()
+
+    // accepted tracks from the current session
+    private val graphed = mutableListOf<Track>()
     private val batch = mutableListOf<TrackModel>()
 
-    // observables
+    // observables - used to update ui
     val user = MutableLiveData<UserWrapper>()
     val track = MutableLiveData<TrackWrapper?>()
     val nextTrack = MutableLiveData<TrackWrapper?>()
@@ -86,6 +97,7 @@ class ContentViewModel(
     val playlist = MutableLiveData<PlaylistWrapper?>()
     val progress = MutableLiveData<Long>()
 
+    // initiate this view model for the current user
     fun initForUser(
         spotifyService: SpotifyService,
         spotifyAppRemote: SpotifyAppRemote,
@@ -94,11 +106,12 @@ class ContentViewModel(
         this.spotifyService = spotifyService
         this.spotifyAppRemote = spotifyAppRemote
 
+        // on ui thread
         viewModelScope.launch {
             // get user data
             login(user)
 
-            // update user ui
+            // update user (including ui)
             updateUser(user)
 
             //local timeline available after updateUser()
@@ -110,11 +123,12 @@ class ContentViewModel(
             // load user playlists and update ui
             loadPlaylists()
 
-            // get next track
+            // get first track
             getNext()
         }
     }
 
+    // login to mongodb using the user's spotify id
     private suspend fun login(user: UserPrivate) = withContext(Dispatchers.IO) {
         val userId = user.id
 
@@ -130,10 +144,10 @@ class ContentViewModel(
         matcha.login(credentials)
     }
 
+    // TODO split into loadUser and updateUser (ui)
     private suspend fun updateUser(user: UserPrivate) {
         val wrappedUser = UserWrapper(user)
 
-        // TODO UserPrivate.wrap()
         withContext(Dispatchers.IO) {
             wrappedUser.bitmap = from(user.images[0].url)
         }
@@ -172,77 +186,31 @@ class ContentViewModel(
     }
 
     // dlstmp model
+
+    // get recently played tracks from the spotify api
     private suspend fun getRecentlyPlayedTracks() = withContext(Dispatchers.IO) {
         val recentlyPlayedTracks = spotifyService.getRecentlyPlayedTracks(mapOf("limit" to 50))
 
+        // convert to TrackModels
         val tracks = recentlyPlayedTracks.items.map {
             TrackModel(
                 it.track.id,
                 it.track.uri,
-                timestamp = 0L
+                timestamp = Instant.parse(it.played_at).toEpochMilli()
             )
         }.toMutableList()
 
+        // get track features
         tracks.injectFeatures()
 
         return@withContext tracks
     }
 
-    // get artist, track and genre seeds based on the user's listening history
-    // more recent seeds have a higher weight
-    // since the spotify api supports a maximum of 5 seeds per recommendation request
-    // 3 short term (most recent), 2 medium term and 1 long term seed is used
-    private suspend fun getSeeds() = withContext(Dispatchers.IO) {
-        val paramsShort = mapOf(
-            // api limit <= 50
-            "limit" to 50,
-            // get a broad picture of what the user listens to
-            "time_range" to "short_term"
-        )
-
-        val paramsMedium = mapOf(
-            "limit" to 50,
-            "time_range" to "medium_term"
-        )
-
-        val paramsLong = mapOf(
-            "limit" to 50,
-            "time_range" to "long_term"
-        )
-
-        val topGenres = mutableListOf<String>()
-
-        val topArtists = listOf(
-            *spotifyService.getTopArtists(paramsShort).items.let {
-                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(2))
-                it.take(2).toTypedArray()
-            },
-            *spotifyService.getTopArtists(paramsMedium).items.let {
-                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(2))
-                it.take(2).toTypedArray()
-            },
-            *spotifyService.getTopArtists(paramsLong).items.let {
-                topGenres.addAll(it.flatMap { it.genres.distinct() }.distinct().take(1))
-                it.take(1).toTypedArray()
-            },
-        )
-
-        val topTracks = listOf(
-            *spotifyService.getTopTracks(paramsShort).items.take(2).toTypedArray(),
-            *spotifyService.getTopTracks(paramsMedium).items.take(2).toTypedArray(),
-            *spotifyService.getTopTracks(paramsLong).items.take(1).toTypedArray(),
-        )
-
-        return@withContext Triple(
-            topArtists.joinToString(",") { it.id },
-            topTracks.joinToString(",") { it.id },
-            topGenres.joinToString(",") { it.replace(" ", "-") }
-        )
-    }
-
+    // use the dlstmp model to get the next track model
     private fun getNextTrackFeatures(): FloatArray {
         val model = modelRepository.model
 
+        // get track features
         val timeline = localTimeline.map { it.features.toFloatArray() }.toTypedArray()
             .filterNot { it.isEmpty() } // exclude empty results
             .toTypedArray()
@@ -250,40 +218,125 @@ class ContentViewModel(
         return model.getNext(timeline)
     }
 
+    // create a query map with all params to get recommendations from the api
     private suspend fun createParamsObject(features: FloatArray): List<Map<String, Any>> {
         val iterator = features.iterator()
 
+        // seeds tracks, artists or genres to base the search on
+        // the Grapher provides 3 sets of seeds based on priority
+        // see Grapher.kt for more
         // the recommendations provided will be based on these seeds
-        val (artists, tracks, genres) = getSeeds()
+        val seeds = Grapher(spotifyService).let {
+            if (graphed.isNotEmpty()) it.forBatch(graphed).createParamsObjects()
+            // when getting first batch of a non-first session
+            else it.createFirst().toList().flatMap { it.createParamsObjects() }
+        }
 
         // the indices of the feature names and the feature values
         // always match and the order doesn't change
-        // map values
         val features = FEATURES.map {
             "target_$it" to iterator.next()
         }.toMap()
 
-        // create final objects
+        // create final query maps - high, medium, low priority
         return listOf(
             mapOf(
-                "limit" to 100,
-                "seed_tracks" to tracks,
+                "limit" to 2,
+                // seeds (genres and artists)
+                *seeds.first().toList().toTypedArray(),
+                // track model
                 *features.toList().toTypedArray()
             ),
             mapOf(
-                "limit" to 100,
-                "seed_artists" to artists,
+                "limit" to 2,
+                *seeds[1].toList().toTypedArray(),
                 *features.toList().toTypedArray()
             ),
             mapOf(
-                "limit" to 100,
-                "seed_genres" to genres,
+                "limit" to 2,
+                *seeds[2].toList().toTypedArray(),
                 *features.toList().toTypedArray()
             )
         )
     }
 
-    // ui
+    // internal ui functions
+    // push data to the ui
+    private fun applyAlbum() = viewModelScope.launch {
+        artists.value = allArtists
+        album.value = albumInternal
+    }
+
+    private suspend fun loadPlaylists() {
+        loadUserPlaylists()
+
+        playlists.value = userPlaylists
+            // filter user's playlists only
+            .filter { it.owner.id == user.value?.user?.id }
+            .map {
+                Playlist().apply {
+                    id = it.id
+                    name = it.name
+                    images = it.images
+                }.wrap()
+            }.toMutableList()
+
+        prepareMainPlaylist()
+    }
+
+    private suspend fun prepareMainPlaylist() {
+        // get the playlist object from the user's playlists
+        // or the first playlist available if the user hasn't selected any
+        val id = getMainPlaylistId() ?: userPlaylists.firstOrNull {
+            it.owner.id == user.value?.user?.id
+        }?.id
+
+        playlist.value = userPlaylists.find { it.id == id }.let {
+            Playlist().apply {
+                this.id = it?.id
+                this.name = it?.name
+                this.uri = it?.uri
+            }.wrap()
+        }
+    }
+
+    // to be called from the ui to request data as needed
+    fun getArtistTracks(artist: ArtistSimple) = viewModelScope.launch {
+        val needsTracks = !(artistTracks.value?.containsKey(artist.id) ?: false)
+
+        if (needsTracks) {
+            val tracks = loadArtistTracks(artist)
+
+            if (artistTracks.value != null) {
+                val copy = artistTracks.value!!
+                copy[artist.id] = tracks
+                artistTracks.value = copy
+            } else artistTracks.value = mutableMapOf(artist.id to tracks)
+        }
+    }
+
+    fun setMainPlaylist(id: String?) = viewModelScope.launch {
+        playlist.value = playlists.value?.find { it.playlist?.id == id }
+
+        withContext(Dispatchers.IO) {
+            val u = matcha.where(AppUser::class.java)
+                .equalTo("_id", user.value?.user?.id!!)
+                .findFirst()
+
+            u?.playlist = id
+
+            u?.let {
+                matcha.where(AppUser::class.java)
+                    .equalTo("_id", user.value?.user?.id!!)
+                    .upsert(it)
+            }
+
+//            realm.executeTransaction { realm ->
+//                u?.let { realm.insertOrUpdate(it) }
+//            }
+        }
+    }
+
     fun getAlbum() = viewModelScope.launch {
         if (album.value?.album?.tracks != null) return@launch
 
@@ -293,7 +346,7 @@ class ContentViewModel(
         applyAlbum()
     }
 
-    // tracks
+    // called from the ui, add or reject tracks
     fun add() = viewModelScope.launch {
         val track = this@ContentViewModel.track.value!!.track
 
@@ -308,6 +361,8 @@ class ContentViewModel(
             track.uri,
             System.currentTimeMillis()
         ).also { localTimeline.add(it) })
+
+        graphed.add(track)
 
         if (batch.size >= MAX_BATCH_SIZE) {
             // dispatch the added tracks queue
@@ -328,6 +383,7 @@ class ContentViewModel(
         play()
     }
 
+    // push accepted tracks to remote db and update local copy
     private suspend fun pushBatch() {
         if (playlist.value == null) return
 
@@ -342,8 +398,10 @@ class ContentViewModel(
                 // update the user's remote and local listening history
                 this?.timeline?.addAll(batch)
                 localTimeline.addAll(batch)
+                sessionTimeline.addAll(batch.map { it.id!! })
             }
 
+            // push changes
             matcha.where(AppUser::class.java)
                 .equalTo("_id", user.value?.user?.id!!)
                 .update(appUser!!)
@@ -363,11 +421,13 @@ class ContentViewModel(
         batch.clear()
     }
 
+    // TODO move to internal ui
     private suspend fun createPlaceholderAlbum(wrappedTrack: TrackWrapper) = Album().apply {
         id = wrappedTrack.track.id
         name = wrappedTrack.track.name
     }.wrap(wrappedTrack.thumbnail)
 
+    // TODO ...
     private suspend fun getNext() {
         // the next batch has already been requested from the Spotify Api
         // listen for changes to ContentViewModel.track
@@ -403,6 +463,7 @@ class ContentViewModel(
         }
     }
 
+    // load next batch of tracks
     private suspend fun loadNextTracks() {
         isWaiting = true
 
@@ -413,15 +474,10 @@ class ContentViewModel(
         // perform the requests
         val t = withContext(Dispatchers.IO) {
             requestObject.flatMap {
-                Log.e (TAG, it.toString())
-
-//                val it = mapOf(
-//                    "limit" to 100,
-//                    "seed_genres" to "hip-hop"
-//                )
-                spotifyService.getRecommendations(it).tracks
+                spotifyService.getRecommendations(it).tracks.also { Log.e(TAG, "recc - size=${it.size}") }
             }
         }.distinctBy { it.id }
+            .filterNot { rejected.any { r -> it.id == r } || sessionTimeline.contains(it.id) }
             .toMutableList()
 
         // update the ui
@@ -447,10 +503,6 @@ class ContentViewModel(
     // these functions are related to the ExtraFragment ui
 
     // update the ui with the new album and artists
-    private fun applyAlbum() = viewModelScope.launch {
-        artists.value = allArtists
-        album.value = albumInternal
-    }
 
     // load album
     private suspend fun loadAlbum(track: Track) {
@@ -459,19 +511,6 @@ class ContentViewModel(
     }
 
     // artists
-    fun getArtistTracks(artist: ArtistSimple) = viewModelScope.launch {
-        val needsTracks = !(artistTracks.value?.containsKey(artist.id) ?: false)
-
-        if (needsTracks) {
-            val tracks = loadArtistTracks(artist)
-
-            if (artistTracks.value != null) {
-                val copy = artistTracks.value!!
-                copy[artist.id] = tracks
-                artistTracks.value = copy
-            } else artistTracks.value = mutableMapOf(artist.id to tracks)
-        }
-    }
 
     private suspend fun loadArtists(album: Album) {
         // get all distinct artist ids from this album
@@ -498,23 +537,6 @@ class ContentViewModel(
     }
 
     // playlists
-    private suspend fun loadPlaylists() {
-        loadUserPlaylists()
-
-        playlists.value = userPlaylists
-            // filter user's playlists
-            .filter { it.owner.id == user.value?.user?.id }
-            .map {
-                Playlist().apply {
-                    id = it.id
-                    name = it.name
-                    images = it.images
-                }.wrap()
-            }.toMutableList()
-
-        prepareMainPlaylist()
-    }
-
     private suspend fun getMainPlaylistId() = withContext(Dispatchers.IO) {
         // get the id of the playlist the user has selected to
         // add tracks to
@@ -522,44 +544,6 @@ class ContentViewModel(
             .equalTo("_id", user.value?.user?.id!!)
             .findFirst()
             ?.playlist
-    }
-
-    fun setMainPlaylist(id: String?) = viewModelScope.launch {
-        playlist.value = playlists.value?.find { it.playlist?.id == id }
-
-        withContext(Dispatchers.IO) {
-            val u = matcha.where(AppUser::class.java)
-                .equalTo("_id", user.value?.user?.id!!)
-                .findFirst()
-
-            u?.playlist = id
-
-            u?.let {
-                matcha.where(AppUser::class.java)
-                    .equalTo("_id", user.value?.user?.id!!)
-                    .upsert(it)
-            }
-
-//            realm.executeTransaction { realm ->
-//                u?.let { realm.insertOrUpdate(it) }
-//            }
-        }
-    }
-
-    private suspend fun prepareMainPlaylist() {
-        // get the playlist object from the user's playlists
-        // or the first playlist available if the user hasn't selected any
-        val id = getMainPlaylistId() ?: userPlaylists.firstOrNull {
-            it.owner.id == user.value?.user?.id
-        }?.id
-
-        playlist.value = userPlaylists.find { it.id == id }.let {
-            Playlist().apply {
-                this.id = it?.id
-                this.name = it?.name
-                this.uri = it?.uri
-            }.wrap()
-        }
     }
 
     private suspend fun loadUserPlaylists() = withContext(Dispatchers.IO) {
@@ -626,7 +610,7 @@ class ContentViewModel(
 
 
     // extension utils
-    // set track features of each track of a mutable list of track models
+// set track features of each track of a mutable list of track models
     private suspend fun MutableList<TrackModel>.injectFeatures() {
         val ids = this.map { it.id }.joinToString(",")
 

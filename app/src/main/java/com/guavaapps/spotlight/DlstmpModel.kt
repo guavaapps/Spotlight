@@ -5,10 +5,13 @@ import java.io.File
 
 private const val TAG = "DLSTMP"
 
-class DLSTMPModel(model: File) {
+// wrapper for a tf lite interpreter
+// used to recommend the next set of track features
+class DlstmpModel(model: File) {
+    // number of timestamps/batch
     private val LOOK_BACK = 1
 
-    // tensorflow lite model returned by the model optimiser
+    // tensorflow lite interpreter
     private var interpreter: Interpreter
 
     // input shape of the model in the form [batches, timesteps, features]
@@ -19,13 +22,15 @@ class DLSTMPModel(model: File) {
         get() = interpreter.getOutputTensor(0).shape()
 
     init {
+        // create an interpreter from a tf lite model file
         interpreter = Interpreter(model)
     }
 
-    // get the next
+    // get the next track features
     fun getNext(timeline: Array<FloatArray>): FloatArray {
         interpreter.allocateTensors()
 
+        // create an empty array to hold the interpreter output
         val output = arrayOf(
             FloatArray(timeline.first().size)
         )
@@ -40,27 +45,30 @@ class DLSTMPModel(model: File) {
 
         interpreter.run(arrayOf(scaledTimeline), output)
 
+        // invert back to standard ranges
         return FeatureScaler.invert(output).first()
     }
 }
 
-
+// min-max scaler
 object FeatureScaler {
-    private val STANDARD_RANGE = 0f..1f
-    private val FULL_RANGE = Float.MIN_VALUE..Float.MAX_VALUE
+    // different features have different possible ranges
+    private val SHORT_RANGE = 0f..1f
+    private val WIDE_RANGE = Float.MIN_VALUE..Float.MAX_VALUE
 
     private val ranges = arrayOf(
-        STANDARD_RANGE, // acousticness
-        STANDARD_RANGE, // danceability
-        STANDARD_RANGE, // energy
-        STANDARD_RANGE, // instrumentallness
-        STANDARD_RANGE, // liveness
-        FULL_RANGE, // loudness
-        STANDARD_RANGE, // speechiness
-        FULL_RANGE, // tempo
-        STANDARD_RANGE // valence
+        SHORT_RANGE, // acousticness
+        SHORT_RANGE, // danceability
+        SHORT_RANGE, // energy
+        SHORT_RANGE, // instrumentallness
+        SHORT_RANGE, // liveness
+        WIDE_RANGE, // loudness
+        SHORT_RANGE, // speechiness
+        WIDE_RANGE, // tempo
+        SHORT_RANGE // valence
     )
 
+    // apply min-max scaling function
     fun scale(features: Array<FloatArray>) = features.map {
         it.mapIndexed { i, it ->
             val min = ranges[i].start
@@ -71,6 +79,7 @@ object FeatureScaler {
         }.toFloatArray()
     }.toTypedArray()
 
+    // invert scaling function
     fun invert(features: Array<FloatArray>) = features.map {
         it.mapIndexed { i, it ->
             val min = ranges[i].start
